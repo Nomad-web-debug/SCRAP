@@ -1,0 +1,509 @@
+2025-03-18 14:51:52,081 - INFO - ====== WebDriver manager ======
+2025-03-18 14:51:54,444 - INFO - Get LATEST chromedriver version for google-chrome
+2025-03-18 14:51:55,026 - INFO - Get LATEST chromedriver version for google-chrome
+2025-03-18 14:51:55,541 - INFO - There is no [win64] chromedriver "134.0.6998.88" for browser google-chrome "134.0.6998" in cache
+2025-03-18 14:51:55,541 - INFO - Get LATEST chromedriver version for google-chrome
+2025-03-18 14:51:56,630 - INFO - WebDriver version 134.0.6998.88 selected
+2025-03-18 14:51:56,636 - INFO - Modern chrome version https://storage.googleapis.com/chrome-for-testing-public/134.0.6998.88/win32/chromedriver-win32.zip
+2025-03-18 14:51:56,636 - INFO - About to download new driver from https://storage.googleapis.com/chrome-for-testing-public/134.0.6998.88/win32/chromedriver-win32.zip
+2025-03-18 14:51:57,184 - INFO - Driver downloading response is 200
+2025-03-18 14:51:59,499 - INFO - Get LATEST chromedriver version for google-chrome
+2025-03-18 14:52:00,094 - INFO - Driver has been saved in cache [C:\Users\user\.wdm\drivers\chromedriver\win64\134.0.6998.88]
+2025-03-18 15:28:07,705 - INFO - Iniciando navegación a la página...
+2025-03-18 15:28:19,803 - INFO - Buscando elementos PDF...
+2025-03-18 15:28:40,863 - ERROR - Error en el scraping: Message: 
+
+2025-03-18 15:52:23,096 - INFO - Iniciando navegación a la página...
+2025-03-18 15:52:30,451 - INFO - Buscando elementos PDF...
+2025-03-18 15:53:33,614 - ERROR - No se encontraron elementos PDF en la página
+2025-03-18 15:56:29,201 - INFO - Iniciando navegación a la página...
+2025-03-18 15:56:36,318 - INFO - Buscando tarjetas de PDF...
+2025-03-18 15:56:36,350 - INFO - Encontradas 147 tarjetas de PDF
+2025-03-18 15:56:36,350 - INFO - Procesando tarjeta de PDF 1/147
+2025-03-18 15:56:46,463 - ERROR - Error procesando tarjeta de PDF 1: Message: no such element: Unable to locate element: {"method":"xpath","selector":".//button[text()='DESCARGAR']"}
+  (Session info: chrome=134.0.6998.89); For documentation on this error, please visit: https://www.selenium.dev/documentation/webdriver/troubleshooting/errors#no-such-element-exception
+Stacktrace:
+	GetHandleVerifier [0x00007FF7D45EFE45+26629]
+	(No symbol) [0x00007FF7D4556010]
+	(No symbol) [0x00007FF7D43E931A]
+	(No symbol) [0x00007FF7D443F8E7]
+	(No symbol) [0x00007FF7D443FB1C]
+	(No symbol) [0x00007FF7D443228C]
+	(No symbol) [0x00007FF7D4467AEF]
+	(No symbol) [0x00007FF7D4432156]
+	(No symbol) [0x00007FF7D4467CC0]
+	(No symbol) [0x00007FF7D4490169]
+	(No symbol) [0x00007FF7D4467883]
+	(No symbol) [0x00007FF7D4430550]
+	(No symbol) [0x00007FF7D4431803]
+	GetHandleVerifier [0x00007FF7D49472BD+3529853]
+	GetHandleVerifier [0x00007FF7D495DA22+3621858]
+	GetHandleVerifier [0x00007FF7D49524D3+3575443]
+	GetHandleVerifier [0x00007FF7D46BB77A+860474]
+	(No symbol) [0x00007FF7D456088F]
+	(No symbol) [0x00007FF7D455CBC4]
+	(No symbol) [0x00007FF7D455CD66]
+	(No symbol) [0x00007FF7D454C2C9]
+	BaseThreadInitThunk [0x00007FFDB3D1259D+29]
+	RtlUserThreadStart [0x00007FFDB4DCAF38+40]
+
+2025-03-18 15:56:46,463 - INFO - Procesando tarjeta de PDF 2/147
+2025-03-18 15:56:56,512 - ERROR - Error procesando tarjeta de PDF 2: Message: no such element: Unable to locate element: {"method":"xpath","selector":".//button[text()='DESCARGAR']"}
+  (Session info: chrome=134.0.6998.89); For documentation on this error, please visit: https://www.selenium.dev/documentation/webdriver/troubleshooting/errors#no-such-element-exception
+Stacktrace:
+	GetHandleVerifier [0x00007FF7D45EFE45+26629]
+	(No symbol) [0x00007FF7D4556010]
+	(No symbol) [0x00007FF7D43E931A]
+	(No symbol) [0x00007FF7D443F8E7]
+	(No symbol) [0x00007FF7D443FB1C]
+	(No symbol) [0x00007FF7D443228C]
+	(No symbol) [0x00007FF7D4467AEF]
+	(No symbol) [0x00007FF7D4432156]
+	(No symbol) [0x00007FF7D4467CC0]
+	(No symbol) [0x00007FF7D4490169]
+	(No symbol) [0x00007FF7D4467883]
+	(No symbol) [0x00007FF7D4430550]
+	(No symbol) [0x00007FF7D4431803]
+	GetHandleVerifier [0x00007FF7D49472BD+3529853]
+	GetHandleVerifier [0x00007FF7D495DA22+3621858]
+	GetHandleVerifier [0x00007FF7D49524D3+3575443]
+	GetHandleVerifier [0x00007FF7D46BB77A+860474]
+	(No symbol) [0x00007FF7D456088F]
+	(No symbol) [0x00007FF7D455CBC4]
+	(No symbol) [0x00007FF7D455CD66]
+	(No symbol) [0x00007FF7D454C2C9]
+	BaseThreadInitThunk [0x00007FFDB3D1259D+29]
+	RtlUserThreadStart [0x00007FFDB4DCAF38+40]
+
+2025-03-18 15:56:56,512 - INFO - Procesando tarjeta de PDF 3/147
+2025-03-18 15:57:06,556 - ERROR - Error procesando tarjeta de PDF 3: Message: no such element: Unable to locate element: {"method":"xpath","selector":".//button[text()='DESCARGAR']"}
+  (Session info: chrome=134.0.6998.89); For documentation on this error, please visit: https://www.selenium.dev/documentation/webdriver/troubleshooting/errors#no-such-element-exception
+Stacktrace:
+	GetHandleVerifier [0x00007FF7D45EFE45+26629]
+	(No symbol) [0x00007FF7D4556010]
+	(No symbol) [0x00007FF7D43E931A]
+	(No symbol) [0x00007FF7D443F8E7]
+	(No symbol) [0x00007FF7D443FB1C]
+	(No symbol) [0x00007FF7D443228C]
+	(No symbol) [0x00007FF7D4467AEF]
+	(No symbol) [0x00007FF7D4432156]
+	(No symbol) [0x00007FF7D4467CC0]
+	(No symbol) [0x00007FF7D4490169]
+	(No symbol) [0x00007FF7D4467883]
+	(No symbol) [0x00007FF7D4430550]
+	(No symbol) [0x00007FF7D4431803]
+	GetHandleVerifier [0x00007FF7D49472BD+3529853]
+	GetHandleVerifier [0x00007FF7D495DA22+3621858]
+	GetHandleVerifier [0x00007FF7D49524D3+3575443]
+	GetHandleVerifier [0x00007FF7D46BB77A+860474]
+	(No symbol) [0x00007FF7D456088F]
+	(No symbol) [0x00007FF7D455CBC4]
+	(No symbol) [0x00007FF7D455CD66]
+	(No symbol) [0x00007FF7D454C2C9]
+	BaseThreadInitThunk [0x00007FFDB3D1259D+29]
+	RtlUserThreadStart [0x00007FFDB4DCAF38+40]
+
+2025-03-18 15:57:06,556 - INFO - Procesando tarjeta de PDF 4/147
+2025-03-18 15:57:16,581 - ERROR - Error procesando tarjeta de PDF 4: Message: no such element: Unable to locate element: {"method":"xpath","selector":".//button[text()='DESCARGAR']"}
+  (Session info: chrome=134.0.6998.89); For documentation on this error, please visit: https://www.selenium.dev/documentation/webdriver/troubleshooting/errors#no-such-element-exception
+Stacktrace:
+	GetHandleVerifier [0x00007FF7D45EFE45+26629]
+	(No symbol) [0x00007FF7D4556010]
+	(No symbol) [0x00007FF7D43E931A]
+	(No symbol) [0x00007FF7D443F8E7]
+	(No symbol) [0x00007FF7D443FB1C]
+	(No symbol) [0x00007FF7D443228C]
+	(No symbol) [0x00007FF7D4467AEF]
+	(No symbol) [0x00007FF7D4432156]
+	(No symbol) [0x00007FF7D4467CC0]
+	(No symbol) [0x00007FF7D4490169]
+	(No symbol) [0x00007FF7D4467883]
+	(No symbol) [0x00007FF7D4430550]
+	(No symbol) [0x00007FF7D4431803]
+	GetHandleVerifier [0x00007FF7D49472BD+3529853]
+	GetHandleVerifier [0x00007FF7D495DA22+3621858]
+	GetHandleVerifier [0x00007FF7D49524D3+3575443]
+	GetHandleVerifier [0x00007FF7D46BB77A+860474]
+	(No symbol) [0x00007FF7D456088F]
+	(No symbol) [0x00007FF7D455CBC4]
+	(No symbol) [0x00007FF7D455CD66]
+	(No symbol) [0x00007FF7D454C2C9]
+	BaseThreadInitThunk [0x00007FFDB3D1259D+29]
+	RtlUserThreadStart [0x00007FFDB4DCAF38+40]
+
+2025-03-18 15:57:16,581 - INFO - Procesando tarjeta de PDF 5/147
+2025-03-18 15:57:26,615 - ERROR - Error procesando tarjeta de PDF 5: Message: no such element: Unable to locate element: {"method":"xpath","selector":".//button[text()='DESCARGAR']"}
+  (Session info: chrome=134.0.6998.89); For documentation on this error, please visit: https://www.selenium.dev/documentation/webdriver/troubleshooting/errors#no-such-element-exception
+Stacktrace:
+	GetHandleVerifier [0x00007FF7D45EFE45+26629]
+	(No symbol) [0x00007FF7D4556010]
+	(No symbol) [0x00007FF7D43E931A]
+	(No symbol) [0x00007FF7D443F8E7]
+	(No symbol) [0x00007FF7D443FB1C]
+	(No symbol) [0x00007FF7D443228C]
+	(No symbol) [0x00007FF7D4467AEF]
+	(No symbol) [0x00007FF7D4432156]
+	(No symbol) [0x00007FF7D4467CC0]
+	(No symbol) [0x00007FF7D4490169]
+	(No symbol) [0x00007FF7D4467883]
+	(No symbol) [0x00007FF7D4430550]
+	(No symbol) [0x00007FF7D4431803]
+	GetHandleVerifier [0x00007FF7D49472BD+3529853]
+	GetHandleVerifier [0x00007FF7D495DA22+3621858]
+	GetHandleVerifier [0x00007FF7D49524D3+3575443]
+	GetHandleVerifier [0x00007FF7D46BB77A+860474]
+	(No symbol) [0x00007FF7D456088F]
+	(No symbol) [0x00007FF7D455CBC4]
+	(No symbol) [0x00007FF7D455CD66]
+	(No symbol) [0x00007FF7D454C2C9]
+	BaseThreadInitThunk [0x00007FFDB3D1259D+29]
+	RtlUserThreadStart [0x00007FFDB4DCAF38+40]
+
+2025-03-18 15:57:26,615 - INFO - Procesando tarjeta de PDF 6/147
+2025-03-18 15:57:36,665 - ERROR - Error procesando tarjeta de PDF 6: Message: no such element: Unable to locate element: {"method":"xpath","selector":".//button[text()='DESCARGAR']"}
+  (Session info: chrome=134.0.6998.89); For documentation on this error, please visit: https://www.selenium.dev/documentation/webdriver/troubleshooting/errors#no-such-element-exception
+Stacktrace:
+	GetHandleVerifier [0x00007FF7D45EFE45+26629]
+	(No symbol) [0x00007FF7D4556010]
+	(No symbol) [0x00007FF7D43E931A]
+	(No symbol) [0x00007FF7D443F8E7]
+	(No symbol) [0x00007FF7D443FB1C]
+	(No symbol) [0x00007FF7D443228C]
+	(No symbol) [0x00007FF7D4467AEF]
+	(No symbol) [0x00007FF7D4432156]
+	(No symbol) [0x00007FF7D4467CC0]
+	(No symbol) [0x00007FF7D4490169]
+	(No symbol) [0x00007FF7D4467883]
+	(No symbol) [0x00007FF7D4430550]
+	(No symbol) [0x00007FF7D4431803]
+	GetHandleVerifier [0x00007FF7D49472BD+3529853]
+	GetHandleVerifier [0x00007FF7D495DA22+3621858]
+	GetHandleVerifier [0x00007FF7D49524D3+3575443]
+	GetHandleVerifier [0x00007FF7D46BB77A+860474]
+	(No symbol) [0x00007FF7D456088F]
+	(No symbol) [0x00007FF7D455CBC4]
+	(No symbol) [0x00007FF7D455CD66]
+	(No symbol) [0x00007FF7D454C2C9]
+	BaseThreadInitThunk [0x00007FFDB3D1259D+29]
+	RtlUserThreadStart [0x00007FFDB4DCAF38+40]
+
+2025-03-18 15:57:36,665 - INFO - Procesando tarjeta de PDF 7/147
+2025-03-18 15:57:42,871 - WARNING - Retrying (Retry(total=2, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NewConnectionError('<urllib3.connection.HTTPConnection object at 0x0000021DEA26B8C0>: Failed to establish a new connection: [WinError 10061] No se puede establecer una conexión ya que el equipo de destino denegó expresamente dicha conexión')': /session/2ae9d0831f47e309f47747c45cfaab78
+2025-03-18 15:57:46,963 - WARNING - Retrying (Retry(total=1, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NewConnectionError('<urllib3.connection.HTTPConnection object at 0x0000021DEA26B890>: Failed to establish a new connection: [WinError 10061] No se puede establecer una conexión ya que el equipo de destino denegó expresamente dicha conexión')': /session/2ae9d0831f47e309f47747c45cfaab78
+2025-03-18 15:57:51,048 - WARNING - Retrying (Retry(total=0, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NewConnectionError('<urllib3.connection.HTTPConnection object at 0x0000021DEA26BE30>: Failed to establish a new connection: [WinError 10061] No se puede establecer una conexión ya que el equipo de destino denegó expresamente dicha conexión')': /session/2ae9d0831f47e309f47747c45cfaab78
+2025-03-18 16:00:14,088 - INFO - Iniciando navegación a la página...
+2025-03-18 16:00:21,749 - INFO - Buscando botones de descarga...
+2025-03-18 16:00:42,804 - ERROR - Error encontrando botones de descarga: Message: 
+
+2025-03-18 16:00:42,804 - ERROR - No se encontraron botones de descarga
+2025-03-18 16:20:25,714 - INFO - Procesando norma ID: 1
+2025-03-18 16:20:27,552 - INFO - PDF 1 procesado exitosamente
+2025-03-18 16:20:28,553 - INFO - Procesando norma ID: 2
+2025-03-18 16:20:31,873 - INFO - PDF 2 procesado exitosamente
+2025-03-18 16:20:32,873 - INFO - Procesando norma ID: 3
+2025-03-18 16:20:34,554 - INFO - PDF 3 procesado exitosamente
+2025-03-18 16:20:35,555 - INFO - Procesando norma ID: 4
+2025-03-18 16:20:36,382 - INFO - PDF 4 procesado exitosamente
+2025-03-18 16:20:37,383 - INFO - Procesando norma ID: 5
+2025-03-18 16:20:38,944 - INFO - PDF 5 procesado exitosamente
+2025-03-18 16:20:39,945 - INFO - Procesando norma ID: 6
+2025-03-18 16:20:40,864 - INFO - PDF 6 procesado exitosamente
+2025-03-18 16:20:41,865 - INFO - Procesando norma ID: 7
+2025-03-18 16:20:42,940 - INFO - PDF 7 procesado exitosamente
+2025-03-18 16:20:43,941 - INFO - Procesando norma ID: 8
+2025-03-18 16:20:45,371 - INFO - PDF 8 procesado exitosamente
+2025-03-18 16:20:46,371 - INFO - Procesando norma ID: 9
+2025-03-18 16:20:50,561 - INFO - PDF 9 procesado exitosamente
+2025-03-18 16:20:51,562 - INFO - Procesando norma ID: 10
+2025-03-18 16:20:51,988 - INFO - PDF 10 procesado exitosamente
+2025-03-18 16:20:53,006 - INFO - Datos guardados en JSON
+2025-03-18 16:20:53,064 - INFO - Datos guardados en CSV
+2025-03-18 16:20:53,065 - INFO - Datos guardados hasta la norma 10
+2025-03-18 16:20:53,065 - INFO - Procesando norma ID: 11
+2025-03-18 16:20:54,232 - INFO - PDF 11 procesado exitosamente
+2025-03-18 16:20:55,233 - INFO - Procesando norma ID: 12
+2025-03-18 16:20:57,256 - INFO - PDF 12 procesado exitosamente
+2025-03-18 16:20:58,257 - INFO - Procesando norma ID: 13
+2025-03-18 16:21:00,234 - INFO - PDF 13 procesado exitosamente
+2025-03-18 16:21:01,234 - INFO - Procesando norma ID: 14
+2025-03-18 16:21:01,876 - INFO - PDF 14 procesado exitosamente
+2025-03-18 16:21:02,876 - INFO - Procesando norma ID: 15
+2025-03-18 16:21:04,747 - INFO - PDF 15 procesado exitosamente
+2025-03-18 16:21:05,748 - INFO - Procesando norma ID: 16
+2025-03-18 16:21:06,821 - INFO - PDF 16 procesado exitosamente
+2025-03-18 16:21:07,822 - INFO - Procesando norma ID: 17
+2025-03-18 16:21:09,553 - INFO - PDF 17 procesado exitosamente
+2025-03-18 16:21:10,553 - INFO - Procesando norma ID: 18
+2025-03-18 16:21:11,059 - INFO - PDF 18 procesado exitosamente
+2025-03-18 16:21:12,060 - INFO - Procesando norma ID: 19
+2025-03-18 16:21:12,602 - INFO - PDF 19 procesado exitosamente
+2025-03-18 16:21:13,602 - INFO - Procesando norma ID: 20
+2025-03-18 16:21:14,713 - INFO - PDF 20 procesado exitosamente
+2025-03-18 16:21:15,752 - INFO - Datos guardados en JSON
+2025-03-18 16:21:15,837 - INFO - Datos guardados en CSV
+2025-03-18 16:21:15,838 - INFO - Datos guardados hasta la norma 20
+2025-03-18 16:21:15,838 - INFO - Procesando norma ID: 21
+2025-03-18 16:21:17,361 - INFO - PDF 21 procesado exitosamente
+2025-03-18 16:21:18,361 - INFO - Procesando norma ID: 22
+2025-03-18 16:21:18,683 - INFO - PDF 22 procesado exitosamente
+2025-03-18 16:21:19,683 - INFO - Procesando norma ID: 23
+2025-03-18 16:21:20,763 - INFO - PDF 23 procesado exitosamente
+2025-03-18 16:21:21,764 - INFO - Procesando norma ID: 24
+2025-03-18 16:21:22,594 - INFO - PDF 24 procesado exitosamente
+2025-03-18 16:21:23,595 - INFO - Procesando norma ID: 25
+2025-03-18 16:21:27,458 - INFO - PDF 25 procesado exitosamente
+2025-03-18 16:21:28,459 - INFO - Procesando norma ID: 26
+2025-03-18 16:21:29,825 - INFO - PDF 26 procesado exitosamente
+2025-03-18 16:21:30,825 - INFO - Procesando norma ID: 27
+2025-03-18 16:21:31,454 - INFO - PDF 27 procesado exitosamente
+2025-03-18 16:21:32,455 - INFO - Procesando norma ID: 28
+2025-03-18 16:21:33,818 - INFO - PDF 28 procesado exitosamente
+2025-03-18 16:21:34,819 - INFO - Procesando norma ID: 29
+2025-03-18 16:21:35,570 - INFO - PDF 29 procesado exitosamente
+2025-03-18 16:21:36,571 - INFO - Procesando norma ID: 30
+2025-03-18 16:21:37,266 - INFO - PDF 30 procesado exitosamente
+2025-03-18 16:21:38,315 - INFO - Datos guardados en JSON
+2025-03-18 16:21:38,438 - INFO - Datos guardados en CSV
+2025-03-18 16:21:38,438 - INFO - Datos guardados hasta la norma 30
+2025-03-18 16:21:38,438 - INFO - Procesando norma ID: 31
+2025-03-18 16:21:38,966 - INFO - PDF 31 procesado exitosamente
+2025-03-18 16:21:39,967 - INFO - Procesando norma ID: 32
+2025-03-18 16:21:42,986 - INFO - PDF 32 procesado exitosamente
+2025-03-18 16:21:43,986 - INFO - Procesando norma ID: 33
+2025-03-18 16:21:45,028 - INFO - PDF 33 procesado exitosamente
+2025-03-18 16:21:46,030 - INFO - Procesando norma ID: 34
+2025-03-18 16:21:47,151 - INFO - PDF 34 procesado exitosamente
+2025-03-18 16:21:48,152 - INFO - Procesando norma ID: 35
+2025-03-18 16:21:49,386 - INFO - PDF 35 procesado exitosamente
+2025-03-18 16:21:50,387 - INFO - Procesando norma ID: 36
+2025-03-18 16:21:51,463 - INFO - PDF 36 procesado exitosamente
+2025-03-18 16:21:52,464 - INFO - Procesando norma ID: 37
+2025-03-18 16:21:53,214 - INFO - PDF 37 procesado exitosamente
+2025-03-18 16:21:54,215 - INFO - Procesando norma ID: 38
+2025-03-18 16:21:57,060 - INFO - PDF 38 procesado exitosamente
+2025-03-18 16:21:58,060 - INFO - Procesando norma ID: 39
+2025-03-18 16:21:58,321 - INFO - PDF 39 procesado exitosamente
+2025-03-18 16:21:59,322 - INFO - Procesando norma ID: 40
+2025-03-18 16:21:59,796 - INFO - PDF 40 procesado exitosamente
+2025-03-18 16:22:00,849 - INFO - Datos guardados en JSON
+2025-03-18 16:22:00,994 - INFO - Datos guardados en CSV
+2025-03-18 16:22:00,994 - INFO - Datos guardados hasta la norma 40
+2025-03-18 16:22:00,994 - INFO - Procesando norma ID: 41
+2025-03-18 16:22:01,235 - INFO - PDF 41 procesado exitosamente
+2025-03-18 16:22:02,236 - INFO - Procesando norma ID: 42
+2025-03-18 16:22:02,651 - INFO - PDF 42 procesado exitosamente
+2025-03-18 16:22:03,652 - INFO - Procesando norma ID: 43
+2025-03-18 16:22:04,509 - INFO - PDF 43 procesado exitosamente
+2025-03-18 16:22:05,510 - INFO - Procesando norma ID: 44
+2025-03-18 16:22:08,348 - INFO - PDF 44 procesado exitosamente
+2025-03-18 16:22:09,349 - INFO - Procesando norma ID: 45
+2025-03-18 16:22:11,670 - INFO - PDF 45 procesado exitosamente
+2025-03-18 16:22:12,671 - INFO - Procesando norma ID: 46
+2025-03-18 16:22:13,555 - INFO - PDF 46 procesado exitosamente
+2025-03-18 16:22:14,557 - INFO - Procesando norma ID: 47
+2025-03-18 16:22:16,133 - INFO - PDF 47 procesado exitosamente
+2025-03-18 16:22:17,134 - INFO - Procesando norma ID: 48
+2025-03-18 16:22:17,801 - INFO - PDF 48 procesado exitosamente
+2025-03-18 16:22:18,802 - INFO - Procesando norma ID: 49
+2025-03-18 16:22:25,277 - INFO - PDF 49 procesado exitosamente
+2025-03-18 16:22:26,278 - INFO - Procesando norma ID: 50
+2025-03-18 16:22:27,704 - INFO - PDF 50 procesado exitosamente
+2025-03-18 16:22:28,786 - INFO - Datos guardados en JSON
+2025-03-18 16:22:28,977 - INFO - Datos guardados en CSV
+2025-03-18 16:22:28,978 - INFO - Datos guardados hasta la norma 50
+2025-03-18 16:22:28,978 - INFO - Procesando norma ID: 51
+2025-03-18 16:22:30,935 - INFO - PDF 51 procesado exitosamente
+2025-03-18 16:22:31,936 - INFO - Procesando norma ID: 52
+2025-03-18 16:22:32,781 - INFO - PDF 52 procesado exitosamente
+2025-03-18 16:22:33,781 - INFO - Procesando norma ID: 53
+2025-03-18 16:22:36,335 - INFO - PDF 53 procesado exitosamente
+2025-03-18 16:22:37,336 - INFO - Procesando norma ID: 54
+2025-03-18 16:22:38,167 - INFO - PDF 54 procesado exitosamente
+2025-03-18 16:22:39,168 - INFO - Procesando norma ID: 55
+2025-03-18 16:22:40,016 - INFO - PDF 55 procesado exitosamente
+2025-03-18 16:22:41,017 - INFO - Procesando norma ID: 56
+2025-03-18 16:22:42,037 - INFO - PDF 56 procesado exitosamente
+2025-03-18 16:22:43,038 - INFO - Procesando norma ID: 57
+2025-03-18 16:22:43,657 - INFO - PDF 57 procesado exitosamente
+2025-03-18 16:22:44,658 - INFO - Procesando norma ID: 58
+2025-03-18 16:22:45,255 - INFO - PDF 58 procesado exitosamente
+2025-03-18 16:22:46,256 - INFO - Procesando norma ID: 59
+2025-03-18 16:22:47,188 - INFO - PDF 59 procesado exitosamente
+2025-03-18 16:22:48,189 - INFO - Procesando norma ID: 60
+2025-03-18 16:22:53,767 - INFO - PDF 60 procesado exitosamente
+2025-03-18 16:22:54,852 - INFO - Datos guardados en JSON
+2025-03-18 16:22:55,091 - INFO - Datos guardados en CSV
+2025-03-18 16:22:55,091 - INFO - Datos guardados hasta la norma 60
+2025-03-18 16:22:55,091 - INFO - Procesando norma ID: 61
+2025-03-18 16:23:00,463 - INFO - PDF 61 procesado exitosamente
+2025-03-18 16:23:01,464 - INFO - Procesando norma ID: 62
+2025-03-18 16:23:06,664 - INFO - PDF 62 procesado exitosamente
+2025-03-18 16:23:07,665 - INFO - Procesando norma ID: 63
+2025-03-18 16:23:09,167 - INFO - PDF 63 procesado exitosamente
+2025-03-18 16:23:10,167 - INFO - Procesando norma ID: 64
+2025-03-18 16:23:10,660 - INFO - PDF 64 procesado exitosamente
+2025-03-18 16:23:11,661 - INFO - Procesando norma ID: 65
+2025-03-18 16:23:12,810 - INFO - PDF 65 procesado exitosamente
+2025-03-18 16:23:13,811 - INFO - Procesando norma ID: 66
+2025-03-18 16:23:14,379 - INFO - PDF 66 procesado exitosamente
+2025-03-18 16:23:15,380 - INFO - Procesando norma ID: 67
+2025-03-18 16:23:16,555 - INFO - PDF 67 procesado exitosamente
+2025-03-18 16:23:17,556 - INFO - Procesando norma ID: 68
+2025-03-18 16:23:18,287 - INFO - PDF 68 procesado exitosamente
+2025-03-18 16:23:19,288 - INFO - Procesando norma ID: 69
+2025-03-18 16:23:20,037 - INFO - PDF 69 procesado exitosamente
+2025-03-18 16:23:21,037 - INFO - Procesando norma ID: 70
+2025-03-18 16:23:21,857 - INFO - PDF 70 procesado exitosamente
+2025-03-18 16:23:22,952 - INFO - Datos guardados en JSON
+2025-03-18 16:23:23,203 - INFO - Datos guardados en CSV
+2025-03-18 16:23:23,203 - INFO - Datos guardados hasta la norma 70
+2025-03-18 16:23:23,203 - INFO - Procesando norma ID: 71
+2025-03-18 16:23:24,838 - INFO - PDF 71 procesado exitosamente
+2025-03-18 16:23:25,839 - INFO - Procesando norma ID: 72
+2025-03-18 16:23:26,414 - INFO - PDF 72 procesado exitosamente
+2025-03-18 16:23:27,414 - INFO - Procesando norma ID: 73
+2025-03-18 16:23:34,057 - INFO - PDF 73 procesado exitosamente
+2025-03-18 16:23:35,058 - INFO - Procesando norma ID: 74
+2025-03-18 16:23:35,972 - INFO - PDF 74 procesado exitosamente
+2025-03-18 16:23:36,972 - INFO - Procesando norma ID: 75
+2025-03-18 16:23:37,392 - INFO - PDF 75 procesado exitosamente
+2025-03-18 16:23:38,392 - INFO - Procesando norma ID: 76
+2025-03-18 16:23:39,401 - INFO - PDF 76 procesado exitosamente
+2025-03-18 16:23:40,402 - INFO - Procesando norma ID: 77
+2025-03-18 16:23:40,990 - INFO - PDF 77 procesado exitosamente
+2025-03-18 16:23:41,991 - INFO - Procesando norma ID: 78
+2025-03-18 16:23:47,619 - INFO - PDF 78 procesado exitosamente
+2025-03-18 16:23:48,620 - INFO - Procesando norma ID: 79
+2025-03-18 16:23:49,646 - INFO - PDF 79 procesado exitosamente
+2025-03-18 16:23:50,646 - INFO - Procesando norma ID: 80
+2025-03-18 16:23:53,153 - INFO - PDF 80 procesado exitosamente
+2025-03-18 16:23:54,267 - INFO - Datos guardados en JSON
+2025-03-18 16:23:54,603 - INFO - Datos guardados en CSV
+2025-03-18 16:23:54,603 - INFO - Datos guardados hasta la norma 80
+2025-03-18 16:23:54,603 - INFO - Procesando norma ID: 81
+2025-03-18 16:23:55,185 - INFO - PDF 81 procesado exitosamente
+2025-03-18 16:23:56,186 - INFO - Procesando norma ID: 82
+2025-03-18 16:23:57,546 - INFO - PDF 82 procesado exitosamente
+2025-03-18 16:23:58,548 - INFO - Procesando norma ID: 83
+2025-03-18 16:24:01,046 - INFO - PDF 83 procesado exitosamente
+2025-03-18 16:24:02,047 - INFO - Procesando norma ID: 84
+2025-03-18 16:24:03,209 - INFO - PDF 84 procesado exitosamente
+2025-03-18 16:24:04,211 - INFO - Procesando norma ID: 85
+2025-03-18 16:24:04,669 - INFO - PDF 85 procesado exitosamente
+2025-03-18 16:24:05,670 - INFO - Procesando norma ID: 86
+2025-03-18 16:24:05,957 - INFO - PDF 86 procesado exitosamente
+2025-03-18 16:24:06,958 - INFO - Procesando norma ID: 87
+2025-03-18 16:24:07,490 - INFO - PDF 87 procesado exitosamente
+2025-03-18 16:24:08,490 - INFO - Procesando norma ID: 88
+2025-03-18 16:24:08,882 - INFO - PDF 88 procesado exitosamente
+2025-03-18 16:24:09,883 - INFO - Procesando norma ID: 89
+2025-03-18 16:24:12,094 - INFO - PDF 89 procesado exitosamente
+2025-03-18 16:24:13,095 - INFO - Procesando norma ID: 90
+2025-03-18 16:24:13,723 - INFO - PDF 90 procesado exitosamente
+2025-03-18 16:24:14,842 - INFO - Datos guardados en JSON
+2025-03-18 16:24:15,168 - INFO - Datos guardados en CSV
+2025-03-18 16:24:15,168 - INFO - Datos guardados hasta la norma 90
+2025-03-18 16:24:15,168 - INFO - Procesando norma ID: 91
+2025-03-18 16:24:16,592 - INFO - PDF 91 procesado exitosamente
+2025-03-18 16:24:17,592 - INFO - Procesando norma ID: 92
+2025-03-18 16:24:18,047 - INFO - PDF 92 procesado exitosamente
+2025-03-18 16:24:19,048 - INFO - Procesando norma ID: 93
+2025-03-18 16:24:19,575 - INFO - PDF 93 procesado exitosamente
+2025-03-18 16:24:20,576 - INFO - Procesando norma ID: 94
+2025-03-18 16:24:20,591 - ERROR - Error descargando PDF 94: Status 200
+2025-03-18 16:24:20,591 - INFO - PDF 94 no existe o no se pudo descargar
+2025-03-18 16:24:21,592 - INFO - Procesando norma ID: 95
+2025-03-18 16:24:21,608 - ERROR - Error descargando PDF 95: Status 200
+2025-03-18 16:24:21,609 - INFO - PDF 95 no existe o no se pudo descargar
+2025-03-18 16:24:22,610 - INFO - Procesando norma ID: 96
+2025-03-18 16:24:22,622 - ERROR - Error descargando PDF 96: Status 200
+2025-03-18 16:24:22,622 - INFO - PDF 96 no existe o no se pudo descargar
+2025-03-18 16:24:23,622 - INFO - Procesando norma ID: 97
+2025-03-18 16:24:23,637 - ERROR - Error descargando PDF 97: Status 200
+2025-03-18 16:24:23,637 - INFO - PDF 97 no existe o no se pudo descargar
+2025-03-18 16:24:24,639 - INFO - Procesando norma ID: 98
+2025-03-18 16:24:24,653 - ERROR - Error descargando PDF 98: Status 200
+2025-03-18 16:24:24,653 - INFO - PDF 98 no existe o no se pudo descargar
+2025-03-18 16:24:25,654 - INFO - Procesando norma ID: 99
+2025-03-18 16:24:25,696 - ERROR - Error descargando PDF 99: Status 200
+2025-03-18 16:24:25,696 - INFO - PDF 99 no existe o no se pudo descargar
+2025-03-18 16:24:26,696 - INFO - Procesando norma ID: 100
+2025-03-18 16:24:26,978 - ERROR - Error descargando PDF 100: Status 200
+2025-03-18 16:24:26,978 - INFO - PDF 100 no existe o no se pudo descargar
+2025-03-18 16:24:28,124 - INFO - Datos guardados en JSON
+2025-03-18 16:24:28,533 - INFO - Datos guardados en CSV
+2025-03-18 16:24:28,533 - INFO - Datos guardados hasta la norma 100
+2025-03-18 16:24:28,666 - INFO - Datos guardados en JSON
+2025-03-18 16:24:29,018 - INFO - Datos guardados en CSV
+2025-03-18 16:24:29,019 - INFO - Proceso completado exitosamente
+2025-03-18 17:18:21,351 - ERROR - Error general: nlptown/bert-base-multilingual-uncased-ner is not a local folder and is not a valid model identifier listed on 'https://huggingface.co/models'
+If this is a private repository, make sure to pass a token having permission to this repo either by logging in with `huggingface-cli login` or by passing `token=<your_token>`
+2025-03-18 17:22:34,850 - INFO - Inicializando modelos de NLP...
+2025-03-18 17:22:37,611 - ERROR - Error inicializando modelos de NLP: nlptown/bert-base-multilingual-uncased-ner is not a local folder and is not a valid model identifier listed on 'https://huggingface.co/models'
+If this is a private repository, make sure to pass a token having permission to this repo either by logging in with `huggingface-cli login` or by passing `token=<your_token>`
+2025-03-18 17:22:37,611 - ERROR - Error general: nlptown/bert-base-multilingual-uncased-ner is not a local folder and is not a valid model identifier listed on 'https://huggingface.co/models'
+If this is a private repository, make sure to pass a token having permission to this repo either by logging in with `huggingface-cli login` or by passing `token=<your_token>`
+2025-03-18 17:49:36,170 - INFO - Inicializando modelos de NLP...
+2025-03-18 17:53:13,387 - INFO - Modelos de NLP inicializados correctamente
+2025-03-18 17:53:13,404 - INFO - Iniciando procesamiento de 100 normas...
+2025-03-18 17:53:13,404 - INFO - Procesando norma 1/100 (ID: 1)
+2025-03-18 17:58:09,499 - INFO - PDF 1 procesado exitosamente
+2025-03-18 17:58:10,499 - INFO - Procesando norma 2/100 (ID: 2)
+2025-03-18 18:03:41,154 - INFO - PDF 2 procesado exitosamente
+2025-03-18 18:03:42,169 - INFO - Procesando norma 3/100 (ID: 3)
+2025-03-18 18:08:34,724 - INFO - PDF 3 procesado exitosamente
+2025-03-18 18:08:35,735 - INFO - Procesando norma 4/100 (ID: 4)
+2025-03-18 18:13:28,534 - INFO - Inicializando modelos de NLP...
+2025-03-18 18:13:39,320 - INFO - Modelos de NLP inicializados correctamente
+2025-03-18 18:13:39,321 - INFO - Iniciando procesamiento de 100 normas...
+2025-03-18 18:13:39,321 - INFO - Procesando norma 1/100 (ID: 1)
+2025-03-18 18:17:58,517 - INFO - PDF 1 procesado exitosamente
+2025-03-18 18:17:59,517 - INFO - Procesando norma 2/100 (ID: 2)
+2025-03-18 18:22:51,896 - INFO - PDF 2 procesado exitosamente
+2025-03-18 18:22:52,901 - INFO - Procesando norma 3/100 (ID: 3)
+2025-03-18 18:27:05,639 - INFO - PDF 3 procesado exitosamente
+2025-03-18 18:27:06,640 - INFO - Procesando norma 4/100 (ID: 4)
+2025-03-18 18:31:11,652 - INFO - PDF 4 procesado exitosamente
+2025-03-18 18:31:12,653 - INFO - Procesando norma 5/100 (ID: 5)
+2025-03-18 18:31:12,664 - ERROR - Error en la descarga del PDF 5: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+2025-03-18 18:31:12,664 - WARNING - PDF 5 no existe o no se pudo descargar
+2025-03-18 18:31:13,665 - INFO - Procesando norma 6/100 (ID: 6)
+2025-03-18 18:35:24,061 - INFO - PDF 6 procesado exitosamente
+2025-03-18 18:35:25,063 - INFO - Procesando norma 7/100 (ID: 7)
+2025-03-18 18:39:31,893 - INFO - PDF 7 procesado exitosamente
+2025-03-18 18:39:32,894 - INFO - Procesando norma 8/100 (ID: 8)
+2025-03-18 18:43:40,670 - INFO - PDF 8 procesado exitosamente
+2025-03-18 18:43:41,671 - INFO - Procesando norma 9/100 (ID: 9)
+2025-03-18 18:48:06,961 - INFO - PDF 9 procesado exitosamente
+2025-03-18 18:48:07,965 - INFO - Procesando norma 10/100 (ID: 10)
+2025-03-18 18:52:04,591 - INFO - PDF 10 procesado exitosamente
+2025-03-18 18:52:05,591 - INFO - Procesando norma 11/100 (ID: 11)
+2025-03-18 18:56:21,003 - INFO - PDF 11 procesado exitosamente
+2025-03-18 18:56:22,036 - INFO - Datos guardados en JSON
+2025-03-18 18:56:22,113 - INFO - Datos guardados en CSV
+2025-03-18 18:56:22,113 - INFO - Datos guardados hasta la norma 11
+2025-03-18 18:56:22,113 - INFO - Procesando norma 12/100 (ID: 12)
+2025-03-18 19:00:50,548 - INFO - PDF 12 procesado exitosamente
+2025-03-18 19:00:51,567 - INFO - Procesando norma 13/100 (ID: 13)
+2025-03-18 19:05:23,784 - INFO - PDF 13 procesado exitosamente
+2025-03-18 19:05:24,786 - INFO - Procesando norma 14/100 (ID: 14)
+2025-03-18 19:09:22,999 - INFO - PDF 14 procesado exitosamente
+2025-03-18 19:09:24,000 - INFO - Procesando norma 15/100 (ID: 15)
+2025-03-18 19:13:45,848 - INFO - PDF 15 procesado exitosamente
+2025-03-18 19:13:46,849 - INFO - Procesando norma 16/100 (ID: 16)
+2025-03-18 19:17:57,408 - INFO - PDF 16 procesado exitosamente
+2025-03-18 19:17:58,410 - INFO - Procesando norma 17/100 (ID: 17)
+2025-03-19 08:31:31,592 - INFO - Datos guardados en JSON
+2025-03-19 08:31:31,737 - INFO - Datos guardados en CSV
+2025-03-19 08:36:32,353 - INFO - Datos guardados en JSON
+2025-03-19 08:36:32,378 - INFO - Datos guardados en CSV
+2025-03-19 08:41:00,193 - INFO - Datos guardados en JSON
+2025-03-19 08:41:00,232 - INFO - Datos guardados en CSV
+2025-03-19 08:45:20,518 - INFO - Datos guardados en JSON
+2025-03-19 08:45:20,550 - INFO - Datos guardados en CSV
+2025-03-19 08:49:53,379 - INFO - Datos guardados en JSON
+2025-03-19 08:49:53,410 - INFO - Datos guardados en CSV
+2025-03-19 09:39:32,459 - INFO - Datos guardados en JSON
+2025-03-19 09:39:32,601 - INFO - Datos guardados en CSV
+2025-03-19 10:28:28,528 - INFO - Datos guardados en JSON: data\normas_completas.json
+2025-03-19 10:28:28,703 - INFO - Datos guardados en CSV: data\normas_completas.csv
