@@ -21,6 +21,10 @@ from collections import defaultdict
 import warnings
 from tqdm import tqdm
 import sys
+from langchain.chat_models import ChatOpenAI
+from langchain.prompts import ChatPromptTemplate
+from langchain.schema import Document
+from dotenv import load_dotenv
 
 # Suprimir advertencias específicas
 warnings.filterwarnings('ignore', category=FutureWarning)
@@ -516,6 +520,49 @@ class PeruanoScraper:
             logging.info(f"Datos guardados en CSV: {csv_path}")
         except Exception as e:
             logging.error(f"Error al guardar datos: {str(e)}")
+
+class AIClassifier:
+    def __init__(self, model_type="openai"):
+        load_dotenv()
+        self.model_type = model_type
+        if model_type == "openai":
+            self.model = ChatOpenAI(temperature=0)
+        # Puedes agregar más modelos aquí (Claude, Ollama, etc.)
+    
+    def classify_document(self, text, categories):
+        prompt = ChatPromptTemplate.from_template("""
+        Analiza el siguiente texto y clasifícalo en una o más de las siguientes categorías: {categories}
+        
+        Texto: {text}
+        
+        Responde en formato JSON con la siguiente estructura:
+        {
+            "categorias": ["categoria1", "categoria2"],
+            "confianza": 0.95,
+            "justificacion": "Explicación breve de la clasificación"
+        }
+        """)
+        
+        chain = prompt | self.model
+        response = chain.invoke({
+            "categories": ", ".join(categories),
+            "text": text[:4000]  # Limitamos el texto para evitar tokens excesivos
+        })
+        
+        return response
+
+class DocumentProcessor:
+    def __init__(self):
+        self.classifier = AIClassifier()
+    
+    def process_pdf(self, pdf_path, categories):
+        # Aquí va el código de extracción de texto del PDF
+        text = self.extract_text_from_pdf(pdf_path)
+        return self.classifier.classify_document(text, categories)
+    
+    def extract_text_from_pdf(self, pdf_path):
+        # Implementar la extracción de texto del PDF
+        pass
 
 if __name__ == "__main__":
     try:
