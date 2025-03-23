@@ -1,0 +1,11 @@
+# Excluir carpeta lambda_package
+lambda_package/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.env
+*.log 
