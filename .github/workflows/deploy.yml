@@ -30,11 +30,38 @@ jobs:
         # Copiar archivos necesarios
         cp lambda_function.py package/
         cp requirements.txt package/
-        # Instalar dependencias en el directorio del paquete
         cd package
-        pip install --target . -r requirements.txt
-        # Crear el archivo ZIP excluyendo archivos innecesarios
-        zip -r9 ../deployment.zip ./* -x "*.pyc" -x "*.pyo" -x "*.dist-info/*" -x "__pycache__/*"
+        
+        # Instalar solo las dependencias necesarias sin archivos extra
+        pip install \
+          --platform manylinux2014_x86_64 \
+          --target . \
+          --implementation cp \
+          --python-version 3.12 \
+          --only-binary=:all: \
+          -r requirements.txt
+        
+        # Limpiar archivos innecesarios
+        find . -type d -name "tests" -exec rm -rf {} +
+        find . -type d -name "test" -exec rm -rf {} +
+        find . -type d -name "docs" -exec rm -rf {} +
+        find . -type f -name "*.pyc" -delete
+        find . -type f -name "*.pyo" -delete
+        find . -type d -name "__pycache__" -exec rm -rf {} +
+        find . -type d -name "*.dist-info" -exec rm -rf {} +
+        find . -type d -name "*.egg-info" -exec rm -rf {} +
+        
+        # Crear ZIP optimizado
+        zip -r9 ../deployment.zip ./* \
+          --exclude "*.pyc" \
+          --exclude "*.pyo" \
+          --exclude "*/__pycache__/*" \
+          --exclude "*.dist-info/*" \
+          --exclude "*.egg-info/*" \
+          --exclude "*/tests/*" \
+          --exclude "*/test/*" \
+          --exclude "*/docs/*"
+        
         cd ..
         
     - name: Configure AWS Credentials
