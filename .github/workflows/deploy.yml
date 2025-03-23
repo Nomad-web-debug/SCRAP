@@ -44,14 +44,20 @@ jobs:
         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         aws-region: us-east-2
         
-    - name: Install AWS CLI
+    - name: Upload to S3
       run: |
-        curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
-        unzip awscliv2.zip
-        sudo ./aws/install --update
+        # Crear bucket si no existe (ignora error si ya existe)
+        aws s3api create-bucket \
+          --bucket clasificador-documentos-ia-deployment \
+          --region us-east-2 \
+          --create-bucket-configuration LocationConstraint=us-east-2 || true
         
-    - name: Deploy to Lambda
+        # Subir archivo a S3
+        aws s3 cp deployment.zip s3://clasificador-documentos-ia-deployment/
+        
+    - name: Update Lambda from S3
       run: |
         aws lambda update-function-code \
           --function-name ClasificadorDocumentosIA \
-          --zip-file fileb://deployment.zip 
+          --s3-bucket clasificador-documentos-ia-deployment \
+          --s3-key deployment.zip 
