@@ -8,9 +8,6 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    permissions:
-      id-token: write
-      contents: read
     
     steps:
     - uses: actions/checkout@v4
@@ -19,6 +16,7 @@ jobs:
       uses: actions/setup-python@v5
       with:
         python-version: '3.12'
+        cache: 'pip'
     
     - name: Install dependencies
       run: |
@@ -27,22 +25,33 @@ jobs:
         
     - name: Create deployment package
       run: |
-        mkdir -p deployment
-        cp -r lambda_function.py requirements.txt deployment/
-        cd deployment
-        pip install -r requirements.txt --target .
-        zip -r ../lambda_deployment.zip .
+        # Crear directorio temporal para el paquete
+        mkdir -p package
+        # Copiar archivos necesarios
+        cp lambda_function.py package/
+        cp requirements.txt package/
+        # Instalar dependencias en el directorio del paquete
+        cd package
+        pip install --target . -r requirements.txt
+        # Crear el archivo ZIP excluyendo archivos innecesarios
+        zip -r9 ../deployment.zip ./* -x "*.pyc" -x "*.pyo" -x "*.dist-info/*" -x "__pycache__/*"
         cd ..
         
-    - name: Configure AWS credentials
+    - name: Configure AWS Credentials
       uses: aws-actions/configure-aws-credentials@v4
       with:
         aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         aws-region: us-east-2
         
-    - name: Update Lambda Function
+    - name: Install AWS CLI
+      run: |
+        curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+        unzip awscliv2.zip
+        sudo ./aws/install --update
+        
+    - name: Deploy to Lambda
       run: |
         aws lambda update-function-code \
           --function-name ClasificadorDocumentosIA \
-          --zip-file fileb://lambda_deployment.zip 
+          --zip-file fileb://deployment.zip 
