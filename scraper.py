@@ -25,6 +25,8 @@ from langchain.chat_models import ChatOpenAI
 from langchain.prompts import ChatPromptTemplate
 from langchain.schema import Document
 from dotenv import load_dotenv
+from bs4 import BeautifulSoup
+import PyPDF2
 
 # Suprimir advertencias específicas
 warnings.filterwarnings('ignore', category=FutureWarning)
@@ -47,13 +49,7 @@ class PeruanoScraper:
         
         # Headers para simular un navegador
         self.headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0 Safari/537.36',
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-            'Accept-Language': 'es-ES,es;q=0.8,en-US;q=0.5,en;q=0.3',
-            'Accept-Encoding': 'gzip, deflate, br',
-            'Connection': 'keep-alive',
-            'Upgrade-Insecure-Requests': '1',
-            'Cache-Control': 'max-age=0'
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
         }
         
         # Inicializar modelos de NLP con configuración optimizada
@@ -563,6 +559,66 @@ class DocumentProcessor:
     def extract_text_from_pdf(self, pdf_path):
         # Implementar la extracción de texto del PDF
         pass
+
+class WebScraper:
+    def __init__(self):
+        self.session = requests.Session()
+        self.headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        }
+    
+    def scrape(self, url):
+        """Realiza el scraping de una URL y extrae el contenido relevante"""
+        try:
+            response = self.session.get(url, headers=self.headers)
+            response.raise_for_status()
+            
+            # Determinar tipo de contenido
+            if url.lower().endswith('.pdf'):
+                return self._process_pdf(response.content)
+            else:
+                return self._process_webpage(response.text)
+                
+        except Exception as e:
+            raise Exception(f"Error al hacer scraping de {url}: {str(e)}")
+    
+    def _process_pdf(self, content):
+        """Procesa contenido PDF"""
+        pdf_file = BytesIO(content)
+        pdf_reader = PyPDF2.PdfReader(pdf_file)
+        
+        text_content = []
+        for page in pdf_reader.pages:
+            text_content.append(page.extract_text())
+        
+        return {
+            'tipo': 'pdf',
+            'contenido': '\n'.join(text_content)
+        }
+    
+    def _process_webpage(self, html):
+        """Procesa contenido HTML"""
+        soup = BeautifulSoup(html, 'html.parser')
+        
+        # Eliminar scripts y estilos
+        for script in soup(["script", "style"]):
+            script.decompose()
+        
+        # Extraer texto principal
+        text = soup.get_text(separator='\n', strip=True)
+        
+        # Extraer información estructurada
+        metadata = {
+            'titulo': soup.title.string if soup.title else '',
+            'descripcion': soup.find('meta', {'name': 'description'})['content'] if soup.find('meta', {'name': 'description'}) else '',
+            'enlaces': [a['href'] for a in soup.find_all('a', href=True)],
+        }
+        
+        return {
+            'tipo': 'webpage',
+            'contenido': text,
+            'metadata': metadata
+        }
 
 if __name__ == "__main__":
     try:

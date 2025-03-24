@@ -18,21 +18,16 @@ jobs:
         python-version: '3.12'
         cache: 'pip'
     
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install -r requirements.txt
-        
     - name: Create deployment package
       run: |
         # Crear directorio temporal para el paquete
         mkdir -p package
-        # Copiar archivos necesarios
+        # Copiar solo los archivos necesarios
         cp lambda_function.py package/
-        cp requirements.txt package/
+        cp requirements-lambda.txt package/requirements.txt
         cd package
         
-        # Instalar solo las dependencias necesarias sin archivos extra
+        # Instalar solo las dependencias mínimas necesarias
         pip install \
           --platform manylinux2014_x86_64 \
           --target . \
@@ -52,16 +47,7 @@ jobs:
         find . -type d -name "*.egg-info" -exec rm -rf {} +
         
         # Crear ZIP optimizado
-        zip -r9 ../deployment.zip ./* \
-          --exclude "*.pyc" \
-          --exclude "*.pyo" \
-          --exclude "*/__pycache__/*" \
-          --exclude "*.dist-info/*" \
-          --exclude "*.egg-info/*" \
-          --exclude "*/tests/*" \
-          --exclude "*/test/*" \
-          --exclude "*/docs/*"
-        
+        zip -r9 ../deployment.zip . -x "*.pyc" "*.pyo" "*/__pycache__/*" "*.dist-info/*" "*.egg-info/*"
         cd ..
         
     - name: Configure AWS Credentials
@@ -70,21 +56,111 @@ jobs:
         aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         aws-region: us-east-2
-        
-    - name: Upload to S3
+
+    - name: Create S3 Buckets
       run: |
-        # Crear bucket si no existe (ignora error si ya existe)
+        # Bucket para documentos originales
         aws s3api create-bucket \
-          --bucket clasificador-documentos-ia-deployment \
+          --bucket clasificador-docs-raw \
           --region us-east-2 \
           --create-bucket-configuration LocationConstraint=us-east-2 || true
         
-        # Subir archivo a S3
-        aws s3 cp deployment.zip s3://clasificador-documentos-ia-deployment/
+        # Bucket para datos procesados
+        aws s3api create-bucket \
+          --bucket clasificador-docs-processed \
+          --region us-east-2 \
+          --create-bucket-configuration LocationConstraint=us-east-2 || true
         
-    - name: Update Lambda from S3
+        # Bucket para modelos entrenados
+        aws s3api create-bucket \
+          --bucket clasificador-models \
+          --region us-east-2 \
+          --create-bucket-configuration LocationConstraint=us-east-2 || true
+        
+        # Habilitar versionamiento
+        for bucket in clasificador-docs-raw clasificador-docs-processed clasificador-models; do
+          aws s3api put-bucket-versioning \
+            --bucket $bucket \
+            --versioning-configuration Status=Enabled
+        done
+
+    - name: Create DynamoDB Tables
       run: |
+        # Tabla para metadatos de documentos
+        aws dynamodb create-table \
+          --table-name DocumentosMetadata \
+          --attribute-definitions \
+              AttributeName=id,AttributeType=S \
+              AttributeName=fecha,AttributeType=S \
+          --key-schema \
+              AttributeName=id,KeyType=HASH \
+              AttributeName=fecha,KeyType=RANGE \
+          --provisioned-throughput \
+              ReadCapacityUnits=5,WriteCapacityUnits=5 || true
+        
+        # Tabla para datos de entrenamiento
+        aws dynamodb create-table \
+          --table-name TrainingData \
+          --attribute-definitions \
+              AttributeName=id,AttributeType=S \
+          --key-schema \
+              AttributeName=id,KeyType=HASH \
+          --provisioned-throughput \
+              ReadCapacityUnits=5,WriteCapacityUnits=5 || true
+        
+        # Tabla para chat
+        aws dynamodb create-table \
+          --table-name ChatHistory \
+          --attribute-definitions \
+              AttributeName=session_id,AttributeType=S \
+              AttributeName=timestamp,AttributeType=N \
+          --key-schema \
+              AttributeName=session_id,KeyType=HASH \
+              AttributeName=timestamp,KeyType=RANGE \
+          --provisioned-throughput \
+              ReadCapacityUnits=5,WriteCapacityUnits=5 || true
+
+    - name: Create SageMaker Notebook
+      run: |
+        aws sagemaker create-notebook-instance \
+          --notebook-instance-name ClasificadorNotebook \
+          --instance-type ml.t3.medium \
+          --role-arn arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/service-role/AmazonSageMaker-ExecutionRole \
+          --volume-size-in-gb 50 || true
+
+    - name: Create API Gateway
+      run: |
+        # Crear API REST
+        api_id=$(aws apigateway create-rest-api \
+          --name ClasificadorAPI \
+          --description "API para el clasificador de documentos" \
+          --query 'id' --output text || true)
+
+    - name: Update Lambda Functions
+      run: |
+        # Función principal de procesamiento
         aws lambda update-function-code \
           --function-name ClasificadorDocumentosIA \
-          --s3-bucket clasificador-documentos-ia-deployment \
-          --s3-key deployment.zip 
+          --zip-file fileb://deployment.zip
+        
+        aws lambda update-function-configuration \
+          --function-name ClasificadorDocumentosIA \
+          --timeout 900 \
+          --memory-size 2048 \
+          --environment "Variables={
+            OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }},
+            S3_RAW_BUCKET=clasificador-docs-raw,
+            S3_PROCESSED_BUCKET=clasificador-docs-processed,
+            S3_MODELS_BUCKET=clasificador-models,
+            DYNAMODB_METADATA_TABLE=DocumentosMetadata,
+            DYNAMODB_TRAINING_TABLE=TrainingData,
+            DYNAMODB_CHAT_TABLE=ChatHistory
+          }"
+        
+        # Crear roles y permisos necesarios
+        aws lambda add-permission \
+          --function-name ClasificadorDocumentosIA \
+          --statement-id AllowS3 \
+          --action lambda:InvokeFunction \
+          --principal s3.amazonaws.com \
+          --source-arn arn:aws:s3:::clasificador-docs-raw || true 
