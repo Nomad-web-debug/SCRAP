@@ -28,19 +28,44 @@ def delete_all_resources():
     s3 = boto3.client('s3', region_name=region)
     dynamodb = boto3.client('dynamodb', region_name=region)
     
-    # 1. Esperar si hay actualizaciones pendientes
-    print("\nVerificando estado de la función Lambda...")
-    wait_for_function_update(lambda_client, 'ClasificadorDocumentosIA')
-    
-    # 2. Eliminar función Lambda
-    print("\nEliminando función Lambda...")
+    # 1. Eliminar buckets S3 (primero porque otros servicios pueden depender de ellos)
+    print("\nEliminando buckets S3...")
     try:
-        lambda_client.delete_function(FunctionName='ClasificadorDocumentosIA')
-        print("✓ Función Lambda eliminada")
-        # Esperar un momento después de eliminar la función
-        time.sleep(5)
+        buckets = s3.list_buckets()['Buckets']
+        for bucket in buckets:
+            bucket_name = bucket['Name']
+            if any(x in bucket_name.lower() for x in ['clasificador', 'docs', 'raw', 'processed']):
+                try:
+                    # Primero vaciar el bucket
+                    objects = s3.list_objects_v2(Bucket=bucket_name)
+                    if 'Contents' in objects:
+                        for obj in objects['Contents']:
+                            s3.delete_object(Bucket=bucket_name, Key=obj['Key'])
+                            print(f"  - Eliminado objeto: {obj['Key']}")
+                    
+                    # Luego eliminar el bucket
+                    s3.delete_bucket(Bucket=bucket_name)
+                    print(f"✓ Bucket {bucket_name} eliminado")
+                    time.sleep(2)
+                except Exception as e:
+                    print(f"No se pudo eliminar el bucket {bucket_name}: {str(e)}")
     except Exception as e:
-        print(f"No se pudo eliminar la función Lambda: {str(e)}")
+        print(f"Error al listar/eliminar buckets: {str(e)}")
+
+    # 2. Eliminar tablas DynamoDB
+    print("\nEliminando tablas DynamoDB...")
+    try:
+        tables = dynamodb.list_tables()['TableNames']
+        for table in tables:
+            if any(x in table.lower() for x in ['documentos', 'metadata', 'training', 'chat']):
+                try:
+                    dynamodb.delete_table(TableName=table)
+                    print(f"✓ Tabla {table} eliminada")
+                    time.sleep(3)
+                except Exception as e:
+                    print(f"No se pudo eliminar la tabla {table}: {str(e)}")
+    except Exception as e:
+        print(f"Error al listar tablas: {str(e)}")
 
     # 3. Eliminar capas Lambda
     print("\nEliminando capas Lambda...")
@@ -62,55 +87,29 @@ def delete_all_resources():
                         VersionNumber=version['Version']
                     )
                     print(f"✓ Capa {layer_name} versión {version['Version']} eliminada")
-                    # Pequeña pausa entre eliminaciones
-                    time.sleep(2)
+                    time.sleep(1)
                 except Exception as e:
                     print(f"No se pudo eliminar la versión {version['Version']} de {layer_name}: {str(e)}")
         except Exception as e:
             print(f"No se pudo listar versiones de {layer_name}: {str(e)}")
 
-    # 4. Eliminar tablas DynamoDB
-    print("\nEliminando tablas DynamoDB...")
-    try:
-        tables = dynamodb.list_tables()['TableNames']
-        for table in tables:
-            if any(x in table.lower() for x in ['documentos', 'metadata', 'training', 'chat']):
-                try:
-                    dynamodb.delete_table(TableName=table)
-                    print(f"✓ Tabla {table} eliminada")
-                    # Esperar entre eliminaciones de tablas
-                    time.sleep(5)
-                except Exception as e:
-                    print(f"No se pudo eliminar la tabla {table}: {str(e)}")
-    except Exception as e:
-        print(f"Error al listar tablas: {str(e)}")
+    # 4. Esperar un momento antes de intentar eliminar la función Lambda
+    print("\nEsperando 30 segundos antes de eliminar la función Lambda...")
+    time.sleep(30)
 
-    # 5. Eliminar buckets S3
-    print("\nEliminando buckets S3...")
-    try:
-        buckets = s3.list_buckets()['Buckets']
-        for bucket in buckets:
-            bucket_name = bucket['Name']
-            if any(x in bucket_name.lower() for x in ['clasificador', 'docs', 'raw', 'processed']):
-                try:
-                    # Primero vaciar el bucket
-                    objects = s3.list_objects_v2(Bucket=bucket_name)
-                    if 'Contents' in objects:
-                        for obj in objects['Contents']:
-                            s3.delete_object(Bucket=bucket_name, Key=obj['Key'])
-                            print(f"  - Eliminado objeto: {obj['Key']}")
-                            # Pequeña pausa entre eliminaciones de objetos
-                            time.sleep(0.5)
-                    
-                    # Luego eliminar el bucket
-                    s3.delete_bucket(Bucket=bucket_name)
-                    print(f"✓ Bucket {bucket_name} eliminado")
-                    # Esperar entre eliminaciones de buckets
-                    time.sleep(3)
-                except Exception as e:
-                    print(f"No se pudo eliminar el bucket {bucket_name}: {str(e)}")
-    except Exception as e:
-        print(f"Error al listar/eliminar buckets: {str(e)}")
+    # 5. Intentar eliminar la función Lambda
+    print("\nEliminando función Lambda...")
+    max_attempts = 3
+    for attempt in range(max_attempts):
+        try:
+            lambda_client.delete_function(FunctionName='ClasificadorDocumentosIA')
+            print("✓ Función Lambda eliminada")
+            break
+        except Exception as e:
+            print(f"Intento {attempt + 1}/{max_attempts}: No se pudo eliminar la función Lambda: {str(e)}")
+            if attempt < max_attempts - 1:
+                print("Esperando 20 segundos antes del siguiente intento...")
+                time.sleep(20)
 
     print("\nLimpieza completada.")
 
