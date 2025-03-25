@@ -27,7 +27,8 @@ jobs:
 
     - name: Create Lambda Layer
       run: |
-        # Crear directorio para la capa
+        # Crear directorio para la capa y asegurar que estamos en el directorio correcto
+        pwd
         mkdir -p lambda_layer/python
         cd lambda_layer/python
         
@@ -51,10 +52,21 @@ jobs:
         find . -type f -name "*.pyo" -delete 2>/dev/null || true
         find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
         
-        # Crear ZIP de la capa
+        # Verificar contenido antes de crear ZIP
+        echo "Contenido del directorio python:"
+        ls -la
+        
+        # Volver al directorio lambda_layer y crear ZIP
         cd ..
-        zip -r9 lambda_layer.zip python/
+        echo "Creando ZIP desde $(pwd)"
+        zip -r9 ../lambda_layer.zip python/
+        
+        # Verificar que el ZIP se creó correctamente
         cd ..
+        echo "Verificando ZIP creado:"
+        ls -la lambda_layer.zip
+        echo "Tamaño del ZIP:"
+        stat -c%s lambda_layer.zip
     
     - name: Create deployment package
       run: |
