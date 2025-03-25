@@ -24,6 +24,37 @@ jobs:
       run: |
         python -m pip install --upgrade pip
         pip install wheel setuptools
+
+    - name: Create Lambda Layer
+      run: |
+        # Crear directorio para la capa
+        mkdir -p lambda_layer/python
+        cd lambda_layer/python
+        
+        # Instalar dependencias en la capa
+        pip install \
+          --platform manylinux2014_x86_64 \
+          --target . \
+          --implementation cp \
+          --python-version 3.12 \
+          --only-binary=:all: \
+          anthropic==0.18.1 \
+          transformers==4.38.2 \
+          torch==2.2.1 \
+          sentence-transformers==2.5.1
+        
+        # Limpiar archivos innecesarios
+        find . -type d -name "tests" -exec rm -rf {} + 2>/dev/null || true
+        find . -type d -name "test" -exec rm -rf {} + 2>/dev/null || true
+        find . -type d -name "docs" -exec rm -rf {} + 2>/dev/null || true
+        find . -type f -name "*.pyc" -delete 2>/dev/null || true
+        find . -type f -name "*.pyo" -delete 2>/dev/null || true
+        find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
+        
+        # Crear ZIP de la capa
+        cd ..
+        zip -r9 lambda_layer.zip python/
+        cd ..
     
     - name: Create deployment package
       run: |
@@ -36,18 +67,22 @@ jobs:
         cp processor.py package/
         cp database.py package/
         cp storage.py package/
-        cp requirements-lambda.txt package/requirements.txt
         
         cd package
         
-        # Instalar dependencias con manejo de errores
-        python -m pip install \
+        # Instalar solo dependencias ligeras
+        pip install \
           --platform manylinux2014_x86_64 \
           --target . \
           --implementation cp \
           --python-version 3.12 \
           --only-binary=:all: \
-          -r requirements.txt || python -m pip install -r requirements.txt
+          boto3==1.34.34 \
+          python-dotenv==1.0.1 \
+          requests==2.31.0 \
+          pandas==2.2.1 \
+          PyPDF2==3.0.1 \
+          beautifulsoup4==4.12.3
         
         # Limpiar archivos innecesarios
         find . -type d -name "tests" -exec rm -rf {} + 2>/dev/null || true
@@ -56,11 +91,9 @@ jobs:
         find . -type f -name "*.pyc" -delete 2>/dev/null || true
         find . -type f -name "*.pyo" -delete 2>/dev/null || true
         find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
-        find . -type d -name "*.dist-info" -exec rm -rf {} + 2>/dev/null || true
-        find . -type d -name "*.egg-info" -exec rm -rf {} + 2>/dev/null || true
         
-        # Crear ZIP con compresión máxima y manejo de errores
-        zip -r9 ../deployment.zip . -x "*.pyc" "*.pyo" "*/__pycache__/*" "*.dist-info/*" "*.egg-info/*" || exit 1
+        # Crear ZIP del paquete principal
+        zip -r9 ../deployment.zip . -x "*.pyc" "*.pyo" "*/__pycache__/*" "*.dist-info/*" "*.egg-info/*"
         cd ..
         
     - name: Configure AWS Credentials
@@ -69,6 +102,58 @@ jobs:
         aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         aws-region: us-east-2
+
+    - name: Update Lambda Layer
+      run: |
+        # Publicar nueva versión de la capa
+        LAYER_VERSION=$(aws lambda publish-layer-version \
+          --layer-name ClasificadorDependencies \
+          --description "Dependencies for ClasificadorDocumentosIA" \
+          --zip-file fileb://lambda_layer.zip \
+          --compatible-runtimes python3.12 \
+          --query 'Version' \
+          --output text)
+        
+        echo "Nueva versión de capa creada: $LAYER_VERSION"
+        
+        # Guardar ARN de la capa
+        LAYER_ARN=$(aws lambda list-layer-versions \
+          --layer-name ClasificadorDependencies \
+          --query 'LayerVersions[0].LayerVersionArn' \
+          --output text)
+        
+        echo "Layer ARN: $LAYER_ARN"
+        echo "LAYER_ARN=$LAYER_ARN" >> $GITHUB_ENV
+
+    - name: Update Lambda Function
+      run: |
+        # Verificar tamaño del paquete
+        PACKAGE_SIZE=$(stat -c%s deployment.zip)
+        echo "Tamaño del paquete: $PACKAGE_SIZE bytes"
+        
+        if [ $PACKAGE_SIZE -gt 50000000 ]; then
+          echo "Error: El paquete es demasiado grande (>50MB). Debe optimizarse."
+          exit 1
+        fi
+        
+        # Actualizar función Lambda
+        aws lambda update-function-code \
+          --function-name ClasificadorDocumentosIA \
+          --zip-file fileb://deployment.zip
+        
+        # Actualizar configuración con la nueva capa
+        aws lambda update-function-configuration \
+          --function-name ClasificadorDocumentosIA \
+          --layers $LAYER_ARN \
+          --timeout 900 \
+          --memory-size 2048 \
+          --environment "Variables={
+            ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY }},
+            S3_BUCKET=clasificador-docs-raw,
+            DYNAMODB_METADATA_TABLE=DocumentosMetadata,
+            DYNAMODB_TRAINING_TABLE=TrainingData,
+            DYNAMODB_CHAT_TABLE=ChatHistory
+          }"
 
     - name: Create S3 Buckets
       run: |
@@ -147,50 +232,4 @@ jobs:
         api_id=$(aws apigateway create-rest-api \
           --name ClasificadorAPI \
           --description "API para el clasificador de documentos" \
-          --query 'id' --output text || true)
-
-    - name: Update Lambda Function
-      run: |
-        # Verificar tamaño del paquete
-        PACKAGE_SIZE=$(stat -c%s deployment.zip)
-        echo "Tamaño del paquete: $PACKAGE_SIZE bytes"
-        
-        if [ $PACKAGE_SIZE -gt 50000000 ]; then
-          echo "Error: El paquete es demasiado grande (>50MB). Debe optimizarse."
-          exit 1
-        fi
-        
-        # Actualizar función Lambda con reintentos
-        MAX_RETRIES=3
-        RETRY_COUNT=0
-        
-        while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
-          if aws lambda update-function-code \
-            --function-name ClasificadorDocumentosIA \
-            --zip-file fileb://deployment.zip; then
-            echo "Función Lambda actualizada exitosamente"
-            break
-          else
-            RETRY_COUNT=$((RETRY_COUNT+1))
-            if [ $RETRY_COUNT -lt $MAX_RETRIES ]; then
-              echo "Reintento $RETRY_COUNT de $MAX_RETRIES..."
-              sleep 5
-            else
-              echo "Error: No se pudo actualizar la función Lambda después de $MAX_RETRIES intentos"
-              exit 1
-            fi
-          fi
-        done
-        
-        # Actualizar configuración de la función
-        aws lambda update-function-configuration \
-          --function-name ClasificadorDocumentosIA \
-          --timeout 900 \
-          --memory-size 2048 \
-          --environment "Variables={
-            ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY }},
-            S3_BUCKET=clasificador-docs-raw,
-            DYNAMODB_METADATA_TABLE=DocumentosMetadata,
-            DYNAMODB_TRAINING_TABLE=TrainingData,
-            DYNAMODB_CHAT_TABLE=ChatHistory
-          }" || exit 1 
+          --query 'id' --output text || true) 
