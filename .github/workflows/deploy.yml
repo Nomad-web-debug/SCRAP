@@ -34,93 +34,133 @@ jobs:
 
     - name: Create Lambda Layers
       run: |
-        # Función para crear una capa
-        create_layer() {
-          local layer_name=$1
-          local packages=$2
-          local extra_args=$3
-          
-          echo "Creando capa $layer_name..."
-          
-          # Crear directorio para la capa
-          mkdir -p "${layer_name}/python"
-          cd "${layer_name}/python"
-          
-          # Instalar dependencias
-          if [ -n "$extra_args" ]; then
-            pip install \
-              --platform manylinux2014_x86_64 \
-              --target . \
-              --implementation cp \
-              --python-version 3.12 \
-              --only-binary=:all: \
-              $extra_args \
-              $packages
-          else
-            pip install \
-              --platform manylinux2014_x86_64 \
-              --target . \
-              --implementation cp \
-              --python-version 3.12 \
-              --only-binary=:all: \
-              $packages
-          fi
-          
-          # Limpiar archivos innecesarios
+        # Función auxiliar para comprimir directorios
+        compress_layer() {
+          local dir=$1
+          local zip_file=$2
+          cd "$dir"
           find . -type d -name "tests" -exec rm -rf {} + 2>/dev/null || true
           find . -type d -name "test" -exec rm -rf {} + 2>/dev/null || true
           find . -type d -name "docs" -exec rm -rf {} + 2>/dev/null || true
           find . -type f -name "*.pyc" -delete 2>/dev/null || true
           find . -type f -name "*.pyo" -delete 2>/dev/null || true
           find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
-          
-          # Crear ZIP
+          find . -type f -name "*.so" ! -name "*cpython*.so" -delete 2>/dev/null || true
+          zip -r9 "../$zip_file" . -x "*.pyc" "*.pyo" "*/__pycache__/*" "*.dist-info/*" "*.egg-info/*"
           cd ..
-          zip -r9 "../${layer_name}.zip" python/
-          cd ..
+        }
+
+        # Función para publicar capa
+        publish_layer() {
+          local name=$1
+          local zip_file=$2
+          local size=$(stat -c%s "$zip_file")
+          echo "Tamaño de $name: $size bytes"
           
-          # Publicar capa
-          LAYER_VERSION=$(aws lambda publish-layer-version \
-            --layer-name "$layer_name" \
+          if [ $size -gt 50000000 ]; then
+            echo "Error: La capa $name es demasiado grande ($size bytes)"
+            return 1
+          fi
+          
+          local arn=$(aws lambda publish-layer-version \
+            --layer-name "$name" \
             --region us-east-2 \
-            --description "Layer for $layer_name" \
-            --zip-file "fileb://${layer_name}.zip" \
+            --description "Layer for $name" \
+            --zip-file "fileb://$zip_file" \
             --compatible-runtimes python3.12 \
             --query 'LayerVersionArn' \
             --output text)
           
-          echo "$layer_name=$LAYER_VERSION" >> $GITHUB_ENV
-          echo "Capa $layer_name creada: $LAYER_VERSION"
+          echo "$name=$arn" >> $GITHUB_ENV
+          echo "Capa $name publicada: $arn"
         }
-        
-        # Crear capas individuales en orden específico
+
+        # 1. Capa Base (dependencias ligeras)
         echo "Creando capa base..."
-        create_layer "ClasificadorBase" "anthropic==0.18.1 requests==2.31.0 python-dotenv==1.0.1"
-        
+        mkdir -p base_layer/python
+        cd base_layer/python
+        pip install \
+          --platform manylinux2014_x86_64 \
+          --target . \
+          --implementation cp \
+          --python-version 3.12 \
+          --only-binary=:all: \
+          anthropic==0.18.1 \
+          requests==2.31.0 \
+          python-dotenv==1.0.1 \
+          boto3==1.34.34
+        cd ../..
+        compress_layer base_layer/python base_layer.zip
+        publish_layer "ClasificadorBase" "base_layer.zip"
+
+        # 2. Capa de Procesamiento (pandas y PDF)
+        echo "Creando capa de procesamiento..."
+        mkdir -p processing_layer/python
+        cd processing_layer/python
+        pip install \
+          --platform manylinux2014_x86_64 \
+          --target . \
+          --implementation cp \
+          --python-version 3.12 \
+          --only-binary=:all: \
+          pandas==2.2.1 \
+          PyPDF2==3.0.1 \
+          beautifulsoup4==4.12.3
+        cd ../..
+        compress_layer processing_layer/python processing_layer.zip
+        publish_layer "ClasificadorProcessing" "processing_layer.zip"
+
+        # 3. Capa ML (numpy y transformers)
         echo "Creando capa ML..."
-        create_layer "ClasificadorML" "transformers==4.38.2 numpy==1.26.4"
-        
+        mkdir -p ml_layer/python
+        cd ml_layer/python
+        pip install \
+          --platform manylinux2014_x86_64 \
+          --target . \
+          --implementation cp \
+          --python-version 3.12 \
+          --only-binary=:all: \
+          numpy==1.26.4 \
+          transformers==4.38.2
+        cd ../..
+        compress_layer ml_layer/python ml_layer.zip
+        publish_layer "ClasificadorML" "ml_layer.zip"
+
+        # 4. Capa PyTorch (solo componentes esenciales)
         echo "Creando capa PyTorch..."
-        pip install --upgrade pip
-        pip install torch==2.2.1 --index-url https://download.pytorch.org/whl/cpu
-        mkdir -p ClasificadorTorch/python
-        cp -r $(pip show torch | grep Location: | cut -d' ' -f2)/torch* ClasificadorTorch/python/
-        cd ClasificadorTorch
-        zip -r9 ../ClasificadorTorch.zip python/
-        cd ..
-        aws lambda publish-layer-version \
-          --layer-name ClasificadorTorch \
-          --region us-east-2 \
-          --description "PyTorch CPU Layer" \
-          --zip-file fileb://ClasificadorTorch.zip \
-          --compatible-runtimes python3.12 \
-          --query 'LayerVersionArn' \
-          --output text > torch_layer_arn
-        echo "ClasificadorTorch=$(cat torch_layer_arn)" >> $GITHUB_ENV
-        
+        mkdir -p torch_layer/python
+        cd torch_layer/python
+        pip install \
+          --platform manylinux2014_x86_64 \
+          --target . \
+          --implementation cp \
+          --python-version 3.12 \
+          --only-binary=:all: \
+          --no-deps \
+          torch==2.2.1+cpu \
+          -f https://download.pytorch.org/whl/cpu/torch_stable.html
+        # Limpiar componentes no esenciales de PyTorch
+        rm -rf torch/test torch/testing torch/utils/test_module.py
+        cd ../..
+        compress_layer torch_layer/python torch_layer.zip
+        publish_layer "ClasificadorTorch" "torch_layer.zip"
+
+        # 5. Capa NLP (sentence-transformers)
         echo "Creando capa NLP..."
-        create_layer "ClasificadorNLP" "sentence-transformers==2.5.1"
-    
+        mkdir -p nlp_layer/python
+        cd nlp_layer/python
+        pip install \
+          --platform manylinux2014_x86_64 \
+          --target . \
+          --implementation cp \
+          --python-version 3.12 \
+          --only-binary=:all: \
+          --no-deps \
+          sentence-transformers==2.5.1
+        cd ../..
+        compress_layer nlp_layer/python nlp_layer.zip
+        publish_layer "ClasificadorNLP" "nlp_layer.zip"
+
     - name: Create deployment package
       run: |
         # Crear directorio temporal para el paquete
@@ -161,24 +201,16 @@ jobs:
 
     - name: Update Lambda Function
       run: |
-        # Verificar tamaño del paquete
-        PACKAGE_SIZE=$(stat -c%s deployment.zip)
-        echo "Tamaño del paquete: $PACKAGE_SIZE bytes"
-        
-        if [ $PACKAGE_SIZE -gt 50000000 ]; then
-          echo "Error: El paquete es demasiado grande (>50MB). Debe optimizarse."
+        # Verificar que todas las capas se crearon correctamente
+        if [ -z "$ClasificadorBase" ] || [ -z "$ClasificadorProcessing" ] || [ -z "$ClasificadorML" ] || [ -z "$ClasificadorTorch" ] || [ -z "$ClasificadorNLP" ]; then
+          echo "Error: No se crearon todas las capas necesarias"
           exit 1
         fi
         
-        # Actualizar función Lambda
-        aws lambda update-function-code \
-          --function-name ClasificadorDocumentosIA \
-          --zip-file fileb://deployment.zip
-        
-        # Actualizar configuración con todas las capas
+        # Actualizar función Lambda con todas las capas
         aws lambda update-function-configuration \
           --function-name ClasificadorDocumentosIA \
-          --layers "$ClasificadorBase" "$ClasificadorML" "$ClasificadorTorch" "$ClasificadorNLP" \
+          --layers "$ClasificadorBase" "$ClasificadorProcessing" "$ClasificadorML" "$ClasificadorTorch" "$ClasificadorNLP" \
           --timeout 900 \
           --memory-size 2048 \
           --environment "Variables={
