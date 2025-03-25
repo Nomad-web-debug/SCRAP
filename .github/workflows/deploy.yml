@@ -25,48 +25,59 @@ jobs:
         python -m pip install --upgrade pip
         pip install wheel setuptools
 
-    - name: Create Lambda Layer
+    - name: Create Lambda Layers
       run: |
-        # Crear directorio para la capa y asegurar que estamos en el directorio correcto
-        pwd
-        mkdir -p lambda_layer/python
-        cd lambda_layer/python
+        # Función para crear una capa
+        create_layer() {
+          local layer_name=$1
+          local packages=$2
+          
+          echo "Creando capa $layer_name..."
+          
+          # Crear directorio para la capa
+          mkdir -p "${layer_name}/python"
+          cd "${layer_name}/python"
+          
+          # Instalar dependencias
+          pip install \
+            --platform manylinux2014_x86_64 \
+            --target . \
+            --implementation cp \
+            --python-version 3.12 \
+            --only-binary=:all: \
+            $packages
+          
+          # Limpiar archivos innecesarios
+          find . -type d -name "tests" -exec rm -rf {} + 2>/dev/null || true
+          find . -type d -name "test" -exec rm -rf {} + 2>/dev/null || true
+          find . -type d -name "docs" -exec rm -rf {} + 2>/dev/null || true
+          find . -type f -name "*.pyc" -delete 2>/dev/null || true
+          find . -type f -name "*.pyo" -delete 2>/dev/null || true
+          find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
+          
+          # Crear ZIP
+          cd ..
+          zip -r9 "../${layer_name}.zip" python/
+          cd ..
+          
+          # Publicar capa
+          LAYER_VERSION=$(aws lambda publish-layer-version \
+            --layer-name "$layer_name" \
+            --description "Layer for $layer_name" \
+            --zip-file "fileb://${layer_name}.zip" \
+            --compatible-runtimes python3.12 \
+            --query 'LayerVersionArn' \
+            --output text)
+          
+          echo "$layer_name=$LAYER_VERSION" >> $GITHUB_ENV
+          echo "Capa $layer_name creada: $LAYER_VERSION"
+        }
         
-        # Instalar dependencias en la capa
-        pip install \
-          --platform manylinux2014_x86_64 \
-          --target . \
-          --implementation cp \
-          --python-version 3.12 \
-          --only-binary=:all: \
-          anthropic==0.18.1 \
-          transformers==4.38.2 \
-          torch==2.2.1 \
-          sentence-transformers==2.5.1
-        
-        # Limpiar archivos innecesarios
-        find . -type d -name "tests" -exec rm -rf {} + 2>/dev/null || true
-        find . -type d -name "test" -exec rm -rf {} + 2>/dev/null || true
-        find . -type d -name "docs" -exec rm -rf {} + 2>/dev/null || true
-        find . -type f -name "*.pyc" -delete 2>/dev/null || true
-        find . -type f -name "*.pyo" -delete 2>/dev/null || true
-        find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
-        
-        # Verificar contenido antes de crear ZIP
-        echo "Contenido del directorio python:"
-        ls -la
-        
-        # Volver al directorio lambda_layer y crear ZIP
-        cd ..
-        echo "Creando ZIP desde $(pwd)"
-        zip -r9 ../lambda_layer.zip python/
-        
-        # Verificar que el ZIP se creó correctamente
-        cd ..
-        echo "Verificando ZIP creado:"
-        ls -la lambda_layer.zip
-        echo "Tamaño del ZIP:"
-        stat -c%s lambda_layer.zip
+        # Crear capas individuales
+        create_layer "ClasificadorBase" "anthropic==0.18.1 requests==2.31.0 python-dotenv==1.0.1"
+        create_layer "ClasificadorML" "transformers==4.38.2"
+        create_layer "ClasificadorTorch" "torch==2.2.1 --index-url https://download.pytorch.org/whl/cpu"
+        create_layer "ClasificadorNLP" "sentence-transformers==2.5.1"
     
     - name: Create deployment package
       run: |
@@ -90,8 +101,6 @@ jobs:
           --python-version 3.12 \
           --only-binary=:all: \
           boto3==1.34.34 \
-          python-dotenv==1.0.1 \
-          requests==2.31.0 \
           pandas==2.2.1 \
           PyPDF2==3.0.1 \
           beautifulsoup4==4.12.3
@@ -107,35 +116,13 @@ jobs:
         # Crear ZIP del paquete principal
         zip -r9 ../deployment.zip . -x "*.pyc" "*.pyo" "*/__pycache__/*" "*.dist-info/*" "*.egg-info/*"
         cd ..
-        
+
     - name: Configure AWS Credentials
       uses: aws-actions/configure-aws-credentials@v4
       with:
         aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         aws-region: us-east-2
-
-    - name: Update Lambda Layer
-      run: |
-        # Publicar nueva versión de la capa
-        LAYER_VERSION=$(aws lambda publish-layer-version \
-          --layer-name ClasificadorDependencies \
-          --description "Dependencies for ClasificadorDocumentosIA" \
-          --zip-file fileb://lambda_layer.zip \
-          --compatible-runtimes python3.12 \
-          --query 'Version' \
-          --output text)
-        
-        echo "Nueva versión de capa creada: $LAYER_VERSION"
-        
-        # Guardar ARN de la capa
-        LAYER_ARN=$(aws lambda list-layer-versions \
-          --layer-name ClasificadorDependencies \
-          --query 'LayerVersions[0].LayerVersionArn' \
-          --output text)
-        
-        echo "Layer ARN: $LAYER_ARN"
-        echo "LAYER_ARN=$LAYER_ARN" >> $GITHUB_ENV
 
     - name: Update Lambda Function
       run: |
@@ -153,10 +140,10 @@ jobs:
           --function-name ClasificadorDocumentosIA \
           --zip-file fileb://deployment.zip
         
-        # Actualizar configuración con la nueva capa
+        # Actualizar configuración con todas las capas
         aws lambda update-function-configuration \
           --function-name ClasificadorDocumentosIA \
-          --layers $LAYER_ARN \
+          --layers "$ClasificadorBase" "$ClasificadorML" "$ClasificadorTorch" "$ClasificadorNLP" \
           --timeout 900 \
           --memory-size 2048 \
           --environment "Variables={
