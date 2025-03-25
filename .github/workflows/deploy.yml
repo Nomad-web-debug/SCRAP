@@ -17,37 +17,50 @@ jobs:
       with:
         python-version: '3.12'
         cache: 'pip'
+        cache-dependency-path: |
+          requirements-lambda.txt
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install wheel setuptools
     
     - name: Create deployment package
       run: |
         # Crear directorio temporal para el paquete
         mkdir -p package
-        # Copiar solo los archivos necesarios
+        
+        # Copiar archivos necesarios
         cp lambda_function.py package/
+        cp scraper.py package/
+        cp processor.py package/
+        cp database.py package/
+        cp storage.py package/
         cp requirements-lambda.txt package/requirements.txt
+        
         cd package
         
-        # Instalar solo las dependencias mínimas necesarias
-        pip install \
+        # Instalar dependencias con manejo de errores
+        python -m pip install \
           --platform manylinux2014_x86_64 \
           --target . \
           --implementation cp \
           --python-version 3.12 \
           --only-binary=:all: \
-          -r requirements.txt
+          -r requirements.txt || python -m pip install -r requirements.txt
         
         # Limpiar archivos innecesarios
-        find . -type d -name "tests" -exec rm -rf {} +
-        find . -type d -name "test" -exec rm -rf {} +
-        find . -type d -name "docs" -exec rm -rf {} +
-        find . -type f -name "*.pyc" -delete
-        find . -type f -name "*.pyo" -delete
-        find . -type d -name "__pycache__" -exec rm -rf {} +
-        find . -type d -name "*.dist-info" -exec rm -rf {} +
-        find . -type d -name "*.egg-info" -exec rm -rf {} +
+        find . -type d -name "tests" -exec rm -rf {} + 2>/dev/null || true
+        find . -type d -name "test" -exec rm -rf {} + 2>/dev/null || true
+        find . -type d -name "docs" -exec rm -rf {} + 2>/dev/null || true
+        find . -type f -name "*.pyc" -delete 2>/dev/null || true
+        find . -type f -name "*.pyo" -delete 2>/dev/null || true
+        find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
+        find . -type d -name "*.dist-info" -exec rm -rf {} + 2>/dev/null || true
+        find . -type d -name "*.egg-info" -exec rm -rf {} + 2>/dev/null || true
         
-        # Crear ZIP optimizado
-        zip -r9 ../deployment.zip . -x "*.pyc" "*.pyo" "*/__pycache__/*" "*.dist-info/*" "*.egg-info/*"
+        # Crear ZIP con compresión máxima y manejo de errores
+        zip -r9 ../deployment.zip . -x "*.pyc" "*.pyo" "*/__pycache__/*" "*.dist-info/*" "*.egg-info/*" || exit 1
         cd ..
         
     - name: Configure AWS Credentials
@@ -136,31 +149,48 @@ jobs:
           --description "API para el clasificador de documentos" \
           --query 'id' --output text || true)
 
-    - name: Update Lambda Functions
+    - name: Update Lambda Function
       run: |
-        # Función principal de procesamiento
-        aws lambda update-function-code \
-          --function-name ClasificadorDocumentosIA \
-          --zip-file fileb://deployment.zip
+        # Verificar tamaño del paquete
+        PACKAGE_SIZE=$(stat -f %z deployment.zip || stat -c %s deployment.zip)
+        echo "Tamaño del paquete: $PACKAGE_SIZE bytes"
         
+        if [ $PACKAGE_SIZE -gt 50000000 ]; then
+          echo "Error: El paquete es demasiado grande (>50MB). Debe optimizarse."
+          exit 1
+        fi
+        
+        # Actualizar función Lambda con reintentos
+        MAX_RETRIES=3
+        RETRY_COUNT=0
+        
+        while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
+          if aws lambda update-function-code \
+            --function-name ClasificadorDocumentosIA \
+            --zip-file fileb://deployment.zip; then
+            echo "Función Lambda actualizada exitosamente"
+            break
+          else
+            RETRY_COUNT=$((RETRY_COUNT+1))
+            if [ $RETRY_COUNT -lt $MAX_RETRIES ]; then
+              echo "Reintento $RETRY_COUNT de $MAX_RETRIES..."
+              sleep 5
+            else
+              echo "Error: No se pudo actualizar la función Lambda después de $MAX_RETRIES intentos"
+              exit 1
+            fi
+          fi
+        done
+        
+        # Actualizar configuración de la función
         aws lambda update-function-configuration \
           --function-name ClasificadorDocumentosIA \
           --timeout 900 \
           --memory-size 2048 \
           --environment "Variables={
-            OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }},
-            S3_RAW_BUCKET=clasificador-docs-raw,
-            S3_PROCESSED_BUCKET=clasificador-docs-processed,
-            S3_MODELS_BUCKET=clasificador-models,
+            ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY }},
+            S3_BUCKET=clasificador-docs-raw,
             DYNAMODB_METADATA_TABLE=DocumentosMetadata,
             DYNAMODB_TRAINING_TABLE=TrainingData,
             DYNAMODB_CHAT_TABLE=ChatHistory
-          }"
-        
-        # Crear roles y permisos necesarios
-        aws lambda add-permission \
-          --function-name ClasificadorDocumentosIA \
-          --statement-id AllowS3 \
-          --action lambda:InvokeFunction \
-          --principal s3.amazonaws.com \
-          --source-arn arn:aws:s3:::clasificador-docs-raw || true 
+          }" || exit 1 
