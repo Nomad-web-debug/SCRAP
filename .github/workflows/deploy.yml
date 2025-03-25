@@ -93,14 +93,32 @@ jobs:
           echo "Capa $layer_name creada: $LAYER_VERSION"
         }
         
-        # Crear capas individuales
+        # Crear capas individuales en orden específico
+        echo "Creando capa base..."
         create_layer "ClasificadorBase" "anthropic==0.18.1 requests==2.31.0 python-dotenv==1.0.1"
-        create_layer "ClasificadorML" "transformers==4.38.2"
         
-        # Instalar PyTorch con índice específico
-        create_layer "ClasificadorTorch" "torch==2.1.0+cpu" "--extra-index-url https://download.pytorch.org/whl/cpu"
+        echo "Creando capa ML..."
+        create_layer "ClasificadorML" "transformers==4.38.2 numpy==1.26.4"
         
-        # Instalar sentence-transformers después de PyTorch
+        echo "Creando capa PyTorch..."
+        pip install --upgrade pip
+        pip install torch==2.2.1 --index-url https://download.pytorch.org/whl/cpu
+        mkdir -p ClasificadorTorch/python
+        cp -r $(pip show torch | grep Location: | cut -d' ' -f2)/torch* ClasificadorTorch/python/
+        cd ClasificadorTorch
+        zip -r9 ../ClasificadorTorch.zip python/
+        cd ..
+        aws lambda publish-layer-version \
+          --layer-name ClasificadorTorch \
+          --region us-east-2 \
+          --description "PyTorch CPU Layer" \
+          --zip-file fileb://ClasificadorTorch.zip \
+          --compatible-runtimes python3.12 \
+          --query 'LayerVersionArn' \
+          --output text > torch_layer_arn
+        echo "ClasificadorTorch=$(cat torch_layer_arn)" >> $GITHUB_ENV
+        
+        echo "Creando capa NLP..."
         create_layer "ClasificadorNLP" "sentence-transformers==2.5.1"
     
     - name: Create deployment package
