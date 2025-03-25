@@ -25,6 +25,13 @@ jobs:
         python -m pip install --upgrade pip
         pip install wheel setuptools
 
+    - name: Configure AWS Credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: us-east-2
+
     - name: Create Lambda Layers
       run: |
         # Función para crear una capa
@@ -63,6 +70,7 @@ jobs:
           # Publicar capa
           LAYER_VERSION=$(aws lambda publish-layer-version \
             --layer-name "$layer_name" \
+            --region us-east-2 \
             --description "Layer for $layer_name" \
             --zip-file "fileb://${layer_name}.zip" \
             --compatible-runtimes python3.12 \
@@ -116,13 +124,6 @@ jobs:
         # Crear ZIP del paquete principal
         zip -r9 ../deployment.zip . -x "*.pyc" "*.pyo" "*/__pycache__/*" "*.dist-info/*" "*.egg-info/*"
         cd ..
-
-    - name: Configure AWS Credentials
-      uses: aws-actions/configure-aws-credentials@v4
-      with:
-        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-        aws-region: us-east-2
 
     - name: Update Lambda Function
       run: |
