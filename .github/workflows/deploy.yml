@@ -2,8 +2,7 @@ name: Deploy to AWS Lambda
 
 on:
   push:
-    branches:
-      - main
+    branches: [ main ]
 
 jobs:
   deploy:
@@ -26,43 +25,86 @@ jobs:
 
     - name: Create Lambda Layers
       run: |
-        # Crear directorio base para las capas
-        mkdir -p layers
+        # Función para limpiar directorios
+        clean_dir() {
+          find . -type d -name "tests" -exec rm -rf {} + 2>/dev/null || true
+          find . -type d -name "test" -exec rm -rf {} + 2>/dev/null || true
+          find . -type f -name "*.pyc" -delete
+          find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
+          find . -type f -name "*.so" ! -name "*cpython*.so" -delete 2>/dev/null || true
+        }
 
-        # 1. Capa Base
+        # 1. Capa Base (dependencias ligeras)
         echo "Creando capa Base..."
         mkdir -p layers/base/python
-        pip install anthropic==0.18.1 requests==2.31.0 python-dotenv==1.0.1 boto3==1.34.34 -t layers/base/python
+        pip install --no-cache-dir \
+          anthropic==0.18.1 \
+          requests==2.31.0 \
+          python-dotenv==1.0.1 \
+          boto3==1.34.34 \
+          -t layers/base/python
+        cd layers/base/python && clean_dir && cd ../../..
         cd layers/base && zip -r ../base.zip . && cd ../..
-        aws lambda publish-layer-version --layer-name ClasificadorBase --zip-file fileb://layers/base.zip --compatible-runtimes python3.9
-
-        # 2. Capa Processing
+        
+        # 2. Capa Processing (sin numpy)
         echo "Creando capa Processing..."
         mkdir -p layers/processing/python
-        pip install pandas==2.2.1 PyPDF2==3.0.1 beautifulsoup4==4.12.3 -t layers/processing/python
+        pip install --no-cache-dir \
+          PyPDF2==3.0.1 \
+          beautifulsoup4==4.12.3 \
+          -t layers/processing/python
+        cd layers/processing/python && clean_dir && cd ../../..
         cd layers/processing && zip -r ../processing.zip . && cd ../..
-        aws lambda publish-layer-version --layer-name ClasificadorProcessing --zip-file fileb://layers/processing.zip --compatible-runtimes python3.9
 
-        # 3. Capa ML
-        echo "Creando capa ML..."
-        mkdir -p layers/ml/python
-        pip install numpy==1.26.4 transformers==4.38.2 -t layers/ml/python
-        cd layers/ml && zip -r ../ml.zip . && cd ../..
-        aws lambda publish-layer-version --layer-name ClasificadorML --zip-file fileb://layers/ml.zip --compatible-runtimes python3.9
+        # 3. Capa Data (pandas y numpy)
+        echo "Creando capa Data..."
+        mkdir -p layers/data/python
+        pip install --no-cache-dir \
+          pandas==2.2.1 \
+          numpy==1.26.4 \
+          --no-deps \
+          -t layers/data/python
+        cd layers/data/python && clean_dir && cd ../../..
+        cd layers/data && zip -r ../data.zip . && cd ../..
 
-        # 4. Capa PyTorch
+        # 4. Capa PyTorch (solo CPU, mínimo)
         echo "Creando capa PyTorch..."
         mkdir -p layers/torch/python
-        pip install torch --index-url https://download.pytorch.org/whl/cpu -t layers/torch/python
+        pip install --no-cache-dir \
+          torch==2.1.0+cpu \
+          --index-url https://download.pytorch.org/whl/cpu \
+          --no-deps \
+          -t layers/torch/python
+        cd layers/torch/python
+        rm -rf torch/test torch/testing torch/utils/test_module.py
+        clean_dir
+        cd ../../..
         cd layers/torch && zip -r ../torch.zip . && cd ../..
-        aws lambda publish-layer-version --layer-name ClasificadorTorch --zip-file fileb://layers/torch.zip --compatible-runtimes python3.9
 
         # 5. Capa NLP
         echo "Creando capa NLP..."
         mkdir -p layers/nlp/python
-        pip install sentence-transformers==2.5.1 -t layers/nlp/python
+        pip install --no-cache-dir \
+          transformers==4.38.2 \
+          sentence-transformers==2.5.1 \
+          --no-deps \
+          -t layers/nlp/python
+        cd layers/nlp/python && clean_dir && cd ../../..
         cd layers/nlp && zip -r ../nlp.zip . && cd ../..
-        aws lambda publish-layer-version --layer-name ClasificadorNLP --zip-file fileb://layers/nlp.zip --compatible-runtimes python3.9
+
+        # Publicar capas
+        for layer in base processing data torch nlp; do
+          size=$(stat -f %z "layers/${layer}.zip" 2>/dev/null || stat -c %s "layers/${layer}.zip")
+          echo "Tamaño de ${layer}.zip: $size bytes"
+          if [ $size -gt 50000000 ]; then
+            echo "Error: La capa ${layer} es demasiado grande ($size bytes)"
+            exit 1
+          fi
+          aws lambda publish-layer-version \
+            --layer-name "Clasificador${layer^}" \
+            --zip-file fileb://layers/${layer}.zip \
+            --compatible-runtimes python3.9
+        done
 
     - name: Create deployment package
       run: |
@@ -75,15 +117,18 @@ jobs:
         # Obtener los ARNs de las capas
         BASE_LAYER=$(aws lambda list-layer-versions --layer-name ClasificadorBase --query 'LayerVersions[0].LayerVersionArn' --output text)
         PROCESSING_LAYER=$(aws lambda list-layer-versions --layer-name ClasificadorProcessing --query 'LayerVersions[0].LayerVersionArn' --output text)
-        ML_LAYER=$(aws lambda list-layer-versions --layer-name ClasificadorML --query 'LayerVersions[0].LayerVersionArn' --output text)
+        DATA_LAYER=$(aws lambda list-layer-versions --layer-name ClasificadorData --query 'LayerVersions[0].LayerVersionArn' --output text)
         TORCH_LAYER=$(aws lambda list-layer-versions --layer-name ClasificadorTorch --query 'LayerVersions[0].LayerVersionArn' --output text)
-        NLP_LAYER=$(aws lambda list-layer-versions --layer-name ClasificadorNLP --query 'LayerVersions[0].LayerVersionArn' --output text)
+        NLP_LAYER=$(aws lambda list-layer-versions --layer-name ClasificadorNlp --query 'LayerVersions[0].LayerVersionArn' --output text)
 
-        # Actualizar la función Lambda con todas las capas
-        aws lambda update-function-code --function-name ClasificadorDocumentosIA --zip-file fileb://deployment.zip
+        # Actualizar función Lambda
+        aws lambda update-function-code \
+          --function-name ClasificadorDocumentosIA \
+          --zip-file fileb://deployment.zip
+
         aws lambda update-function-configuration \
           --function-name ClasificadorDocumentosIA \
-          --layers $BASE_LAYER $PROCESSING_LAYER $ML_LAYER $TORCH_LAYER $NLP_LAYER \
+          --layers $BASE_LAYER $PROCESSING_LAYER $DATA_LAYER $TORCH_LAYER $NLP_LAYER \
           --timeout 900 \
           --memory-size 2048
 
