@@ -59,40 +59,4 @@ jobs:
         BUCKET_NAME=$(cd terraform && terraform output -raw s3_bucket)
         aws s3 cp app.zip s3://$BUCKET_NAME/
         aws s3 cp scripts/init.sh s3://$BUCKET_NAME/
-        aws s3 cp scripts/check_idle.sh s3://$BUCKET_NAME/
-
-    - name: Create EC2 Launch Template
-      run: |
-        aws ec2 create-launch-template \
-          --launch-template-name clasificador-documentos-template \
-          --version-description v1 \
-          --launch-template-data '{
-            "InstanceType": "t3.medium",
-            "ImageId": "ami-0430580de6244e02e",
-            "UserData": "IyEvYmluL2Jhc2gKY2QgL29wdC9jbGFzaWZpY2Fkb3IKYXdzIHMzIGNwIHMzOi8vY2xhc2lmaWNhZG9yLWRvY3VtZW50b3MtYXBwL2FwcC56aXAgLgp1bnppcCBhcHAuemlwCnBpcDMgaW5zdGFsbCAtciByZXF1aXJlbWVudHMudHh0CmNob3duIC1SIGVjMi11c2VyOmVjMi11c2VyIC9vcHQvY2xhc2lmaWNhZG9yCnN1IC1jICJweXRob24zIGFwcC9tYWluLnB5IiBlYzItdXNlcg=="
-          }'
-
-    - name: Create Auto Scaling Group
-      run: |
-        aws autoscaling create-auto-scaling-group \
-          --auto-scaling-group-name clasificador-documentos-asg \
-          --launch-template LaunchTemplateName=clasificador-documentos-template \
-          --min-size 0 \
-          --max-size 1 \
-          --desired-capacity 0 \
-          --vpc-zone-identifier subnet-xxxxxxxx \
-          --tags Key=Name,Value=ClasificadorDocumentos,PropagateAtLaunch=true
-
-    - name: Create CloudWatch Alarms
-      run: |
-        aws cloudwatch put-metric-alarm \
-          --alarm-name clasificador-documentos-cpu \
-          --alarm-description "Alarm when CPU exceeds 70%" \
-          --metric-name CPUUtilization \
-          --namespace AWS/EC2 \
-          --statistic Average \
-          --period 300 \
-          --threshold 70 \
-          --comparison-operator GreaterThanThreshold \
-          --evaluation-periods 2 \
-          --alarm-actions arn:aws:autoscaling:us-east-2:${AWS_ACCOUNT_ID}:scalingPolicy:xxx 
+        aws s3 cp scripts/check_idle.sh s3://$BUCKET_NAME/ 
