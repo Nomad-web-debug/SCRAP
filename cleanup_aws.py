@@ -7,19 +7,19 @@ AWS_ACCESS_KEY = os.environ.get('AWS_ACCESS_KEY_ID')
 AWS_SECRET_KEY = os.environ.get('AWS_SECRET_ACCESS_KEY')
 region = 'us-east-2'
 
-def wait_for_function_update(lambda_client, function_name, max_attempts=10):
-    """Espera hasta que la función Lambda termine de actualizarse"""
-    for i in range(max_attempts):
+def wait_for_function_update(lambda_client, function_name):
+    print(f"Esperando a que la función {function_name} termine de actualizarse...")
+    while True:
         try:
             response = lambda_client.get_function(FunctionName=function_name)
-            if response['Configuration']['State'] == 'Active':
-                return True
-            print(f"Esperando que la función termine de actualizarse... intento {i+1}/{max_attempts}")
+            if response['Configuration']['LastUpdateStatus'] == 'Successful':
+                break
             time.sleep(10)
+        except lambda_client.exceptions.ResourceNotFoundException:
+            break
         except Exception as e:
-            print(f"Error al verificar estado de la función: {str(e)}")
-            return False
-    return False
+            print(f"Error al verificar estado: {str(e)}")
+            break
 
 def delete_all_resources():
     """Elimina todos los recursos AWS relacionados con el proyecto"""
@@ -41,6 +41,9 @@ def delete_all_resources():
     # 1. Eliminar función Lambda y su rol IAM
     print("\nEliminando función Lambda y rol IAM...")
     try:
+        # Esperar a que termine la actualización
+        wait_for_function_update(lambda_client, 'ClasificadorDocumentosIA')
+        
         # Obtener el rol de la función Lambda
         lambda_info = lambda_client.get_function(FunctionName='ClasificadorDocumentosIA')
         role_arn = lambda_info['Configuration']['Role']
