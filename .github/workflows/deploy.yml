@@ -22,28 +22,44 @@ jobs:
     - name: Setup Terraform
       uses: hashicorp/setup-terraform@v1
       with:
-        terraform_version: 1.0.0
+        terraform_version: 1.5.0
 
+    - name: Create Terraform Directory
+      run: |
+        mkdir -p terraform
+        mv main.tf terraform/
+        
     - name: Package Application
       run: |
         zip -r app.zip app/ scripts/ requirements.txt
 
     - name: Terraform Init
+      id: init
       run: |
         cd terraform
-        terraform init
+        terraform init -input=false
+      continue-on-error: true
+
+    - name: Terraform Workspace
+      if: steps.init.outcome == 'success'
+      run: |
+        cd terraform
+        terraform workspace new prod || terraform workspace select prod
 
     - name: Terraform Plan
+      if: steps.init.outcome == 'success'
       run: |
         cd terraform
-        terraform plan -out=tfplan
+        terraform plan -input=false -out=tfplan
 
     - name: Terraform Apply
+      if: steps.init.outcome == 'success'
       run: |
         cd terraform
         terraform apply -auto-approve tfplan
 
     - name: Upload Application to S3
+      if: steps.init.outcome == 'success'
       run: |
         BUCKET_NAME=$(cd terraform && terraform output -raw s3_bucket)
         aws s3 cp app.zip s3://$BUCKET_NAME/

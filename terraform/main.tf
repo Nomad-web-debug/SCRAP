@@ -2,6 +2,10 @@ provider "aws" {
   region = "us-east-2"
 }
 
+# Proveedor random
+provider "random" {
+}
+
 # VPC y Networking
 resource "aws_vpc" "main" {
   cidr_block = "10.0.0.0/16"
@@ -82,9 +86,16 @@ resource "aws_security_group" "ec2" {
   }
 }
 
+# Generador de sufijo aleatorio
+resource "random_string" "suffix" {
+  length  = 8
+  special = false
+  upper   = false
+}
+
 # S3 Bucket
 resource "aws_s3_bucket" "app" {
-  bucket = "clasificador-documentos-app"
+  bucket = "clasificador-documentos-${random_string.suffix.result}"
 }
 
 resource "aws_s3_bucket_versioning" "app" {
