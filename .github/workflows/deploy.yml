@@ -1,8 +1,9 @@
-name: Deploy to AWS Lambda
+name: Deploy Application
 
 on:
   push:
     branches: [ main ]
+  workflow_dispatch:
 
 jobs:
   deploy:
@@ -10,203 +11,63 @@ jobs:
     
     steps:
     - uses: actions/checkout@v2
-    
-    - name: Set up Python
-      uses: actions/setup-python@v2
-      with:
-        python-version: '3.9'
-    
-    - name: Configure AWS credentials
+
+    - name: Configure AWS Credentials
       uses: aws-actions/configure-aws-credentials@v1
       with:
         aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         aws-region: us-east-2
 
-    - name: Create Lambda Layers
+    - name: Create S3 bucket
       run: |
-        # Función para limpiar directorios
-        clean_dir() {
-          find . -type d -name "tests" -exec rm -rf {} + 2>/dev/null || true
-          find . -type d -name "test" -exec rm -rf {} + 2>/dev/null || true
-          find . -type f -name "*.pyc" -delete
-          find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
-          find . -type f -name "*.so" ! -name "*cpython*.so" -delete 2>/dev/null || true
-        }
-
-        # 1. Capa Base (dependencias ligeras)
-        echo "Creando capa Base..."
-        mkdir -p layers/base/python
-        pip install --no-cache-dir \
-          anthropic==0.18.1 \
-          requests==2.31.0 \
-          python-dotenv==1.0.1 \
-          boto3==1.34.34 \
-          -t layers/base/python
-        cd layers/base/python && clean_dir && cd ../../..
-        cd layers/base && zip -r ../base.zip . && cd ../..
-        
-        # 2. Capa Processing (sin numpy)
-        echo "Creando capa Processing..."
-        mkdir -p layers/processing/python
-        pip install --no-cache-dir \
-          PyPDF2==3.0.1 \
-          beautifulsoup4==4.12.3 \
-          -t layers/processing/python
-        cd layers/processing/python && clean_dir && cd ../../..
-        cd layers/processing && zip -r ../processing.zip . && cd ../..
-
-        # 3. Capa Data (pandas y numpy)
-        echo "Creando capa Data..."
-        mkdir -p layers/data/python
-        pip install --no-cache-dir \
-          pandas==2.2.1 \
-          numpy==1.26.4 \
-          --no-deps \
-          -t layers/data/python
-        cd layers/data/python && clean_dir && cd ../../..
-        cd layers/data && zip -r ../data.zip . && cd ../..
-
-        # 4. Capa PyTorch (solo CPU, mínimo)
-        echo "Creando capa PyTorch..."
-        mkdir -p layers/torch/python
-        pip install --no-cache-dir \
-          torch==2.1.0+cpu \
-          --index-url https://download.pytorch.org/whl/cpu \
-          --no-deps \
-          -t layers/torch/python
-        cd layers/torch/python
-        rm -rf torch/test torch/testing torch/utils/test_module.py
-        clean_dir
-        cd ../../..
-        cd layers/torch && zip -r ../torch.zip . && cd ../..
-
-        # 5. Capa NLP
-        echo "Creando capa NLP..."
-        mkdir -p layers/nlp/python
-        pip install --no-cache-dir \
-          transformers==4.38.2 \
-          sentence-transformers==2.5.1 \
-          --no-deps \
-          -t layers/nlp/python
-        cd layers/nlp/python && clean_dir && cd ../../..
-        cd layers/nlp && zip -r ../nlp.zip . && cd ../..
-
-        # Publicar capas
-        for layer in base processing data torch nlp; do
-          size=$(stat -f %z "layers/${layer}.zip" 2>/dev/null || stat -c %s "layers/${layer}.zip")
-          echo "Tamaño de ${layer}.zip: $size bytes"
-          if [ $size -gt 50000000 ]; then
-            echo "Error: La capa ${layer} es demasiado grande ($size bytes)"
-            exit 1
-          fi
-          aws lambda publish-layer-version \
-            --layer-name "Clasificador${layer^}" \
-            --zip-file fileb://layers/${layer}.zip \
-            --compatible-runtimes python3.9
-        done
-
-    - name: Create deployment package
-      run: |
-        mkdir package
-        cp -r *.py package/
-        cd package && zip -r ../deployment.zip . && cd ..
-
-    - name: Update Lambda Function
-      run: |
-        # Obtener los ARNs de las capas
-        BASE_LAYER=$(aws lambda list-layer-versions --layer-name ClasificadorBase --query 'LayerVersions[0].LayerVersionArn' --output text)
-        PROCESSING_LAYER=$(aws lambda list-layer-versions --layer-name ClasificadorProcessing --query 'LayerVersions[0].LayerVersionArn' --output text)
-        DATA_LAYER=$(aws lambda list-layer-versions --layer-name ClasificadorData --query 'LayerVersions[0].LayerVersionArn' --output text)
-        TORCH_LAYER=$(aws lambda list-layer-versions --layer-name ClasificadorTorch --query 'LayerVersions[0].LayerVersionArn' --output text)
-        NLP_LAYER=$(aws lambda list-layer-versions --layer-name ClasificadorNlp --query 'LayerVersions[0].LayerVersionArn' --output text)
-
-        # Actualizar función Lambda
-        aws lambda update-function-code \
-          --function-name ClasificadorDocumentosIA \
-          --zip-file fileb://deployment.zip
-
-        aws lambda update-function-configuration \
-          --function-name ClasificadorDocumentosIA \
-          --layers $BASE_LAYER $PROCESSING_LAYER $DATA_LAYER $TORCH_LAYER $NLP_LAYER \
-          --timeout 900 \
-          --memory-size 2048
-
-    - name: Create S3 Buckets
-      run: |
-        # Bucket para documentos originales
         aws s3api create-bucket \
-          --bucket clasificador-docs-raw \
+          --bucket clasificador-documentos-app \
           --region us-east-2 \
-          --create-bucket-configuration LocationConstraint=us-east-2 || true
-        
-        # Bucket para datos procesados
-        aws s3api create-bucket \
-          --bucket clasificador-docs-processed \
-          --region us-east-2 \
-          --create-bucket-configuration LocationConstraint=us-east-2 || true
-        
-        # Bucket para modelos entrenados
-        aws s3api create-bucket \
-          --bucket clasificador-models \
-          --region us-east-2 \
-          --create-bucket-configuration LocationConstraint=us-east-2 || true
-        
-        # Habilitar versionamiento
-        for bucket in clasificador-docs-raw clasificador-docs-processed clasificador-models; do
-          aws s3api put-bucket-versioning \
-            --bucket $bucket \
-            --versioning-configuration Status=Enabled
-        done
+          --create-bucket-configuration LocationConstraint=us-east-2
 
-    - name: Create DynamoDB Tables
+    - name: Upload application files
       run: |
-        # Tabla para metadatos de documentos
-        aws dynamodb create-table \
-          --table-name DocumentosMetadata \
-          --attribute-definitions \
-              AttributeName=id,AttributeType=S \
-              AttributeName=fecha,AttributeType=S \
-          --key-schema \
-              AttributeName=id,KeyType=HASH \
-              AttributeName=fecha,KeyType=RANGE \
-          --provisioned-throughput \
-              ReadCapacityUnits=5,WriteCapacityUnits=5 || true
-        
-        # Tabla para datos de entrenamiento
-        aws dynamodb create-table \
-          --table-name TrainingData \
-          --attribute-definitions \
-              AttributeName=id,AttributeType=S \
-          --key-schema \
-              AttributeName=id,KeyType=HASH \
-          --provisioned-throughput \
-              ReadCapacityUnits=5,WriteCapacityUnits=5 || true
-        
-        # Tabla para chat
-        aws dynamodb create-table \
-          --table-name ChatHistory \
-          --attribute-definitions \
-              AttributeName=session_id,AttributeType=S \
-              AttributeName=timestamp,AttributeType=N \
-          --key-schema \
-              AttributeName=session_id,KeyType=HASH \
-              AttributeName=timestamp,KeyType=RANGE \
-          --provisioned-throughput \
-              ReadCapacityUnits=5,WriteCapacityUnits=5 || true
+        zip -r app.zip app/ scripts/ requirements.txt
+        aws s3 cp app.zip s3://clasificador-documentos-app/
 
-    - name: Create SageMaker Notebook
+    - name: Update EC2 user data script
       run: |
-        aws sagemaker create-notebook-instance \
-          --notebook-instance-name ClasificadorNotebook \
-          --instance-type ml.t3.medium \
-          --role-arn arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/service-role/AmazonSageMaker-ExecutionRole \
-          --volume-size-in-gb 50 || true
+        aws s3 cp scripts/init.sh s3://clasificador-documentos-app/
+        aws s3 cp scripts/check_idle.sh s3://clasificador-documentos-app/
 
-    - name: Create API Gateway
+    - name: Create EC2 Launch Template
       run: |
-        # Crear API REST
-        api_id=$(aws apigateway create-rest-api \
-          --name ClasificadorAPI \
-          --description "API para el clasificador de documentos" \
-          --query 'id' --output text || true) 
+        aws ec2 create-launch-template \
+          --launch-template-name clasificador-documentos-template \
+          --version-description v1 \
+          --launch-template-data '{
+            "InstanceType": "t3.medium",
+            "ImageId": "ami-0430580de6244e02e",
+            "UserData": "IyEvYmluL2Jhc2gKY2QgL29wdC9jbGFzaWZpY2Fkb3IKYXdzIHMzIGNwIHMzOi8vY2xhc2lmaWNhZG9yLWRvY3VtZW50b3MtYXBwL2FwcC56aXAgLgp1bnppcCBhcHAuemlwCnBpcDMgaW5zdGFsbCAtciByZXF1aXJlbWVudHMudHh0CmNob3duIC1SIGVjMi11c2VyOmVjMi11c2VyIC9vcHQvY2xhc2lmaWNhZG9yCnN1IC1jICJweXRob24zIGFwcC9tYWluLnB5IiBlYzItdXNlcg=="
+          }'
+
+    - name: Create Auto Scaling Group
+      run: |
+        aws autoscaling create-auto-scaling-group \
+          --auto-scaling-group-name clasificador-documentos-asg \
+          --launch-template LaunchTemplateName=clasificador-documentos-template \
+          --min-size 0 \
+          --max-size 1 \
+          --desired-capacity 0 \
+          --vpc-zone-identifier subnet-xxxxxxxx \
+          --tags Key=Name,Value=ClasificadorDocumentos,PropagateAtLaunch=true
+
+    - name: Create CloudWatch Alarms
+      run: |
+        aws cloudwatch put-metric-alarm \
+          --alarm-name clasificador-documentos-cpu \
+          --alarm-description "Alarm when CPU exceeds 70%" \
+          --metric-name CPUUtilization \
+          --namespace AWS/EC2 \
+          --statistic Average \
+          --period 300 \
+          --threshold 70 \
+          --comparison-operator GreaterThanThreshold \
+          --evaluation-periods 2 \
+          --alarm-actions arn:aws:autoscaling:us-east-2:${AWS_ACCOUNT_ID}:scalingPolicy:xxx 
