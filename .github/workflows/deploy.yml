@@ -49,14 +49,15 @@ jobs:
 
     - name: Terraform Apply
       if: steps.init.outcome == 'success'
+      id: apply
       run: |
         cd terraform
         terraform apply -auto-approve tfplan
+        echo "s3_bucket=$(terraform output -raw s3_bucket)" >> $GITHUB_OUTPUT
 
     - name: Upload Application to S3
-      if: steps.init.outcome == 'success'
+      if: steps.apply.outcome == 'success'
       run: |
-        BUCKET_NAME=$(cd terraform && terraform output -raw s3_bucket)
-        aws s3 cp app.zip s3://$BUCKET_NAME/
-        aws s3 cp scripts/init.sh s3://$BUCKET_NAME/
-        aws s3 cp scripts/check_idle.sh s3://$BUCKET_NAME/ 
+        aws s3 cp app.zip s3://${{ steps.apply.outputs.s3_bucket }}/
+        aws s3 cp scripts/init.sh s3://${{ steps.apply.outputs.s3_bucket }}/
+        aws s3 cp scripts/check_idle.sh s3://${{ steps.apply.outputs.s3_bucket }}/ 

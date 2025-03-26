@@ -325,11 +325,11 @@ resource "aws_autoscaling_policy" "scale_down" {
 
 # Outputs
 output "vpc_id" {
-  value = aws_vpc.main.id
+  value = local.vpc_id
 }
 
 output "subnet_id" {
-  value = aws_subnet.public.id
+  value = local.subnet_id
 }
 
 output "security_group_id" {

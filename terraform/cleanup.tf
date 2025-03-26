@@ -6,6 +6,10 @@ resource "aws_s3_bucket_lifecycle_configuration" "bucket_lifecycle" {
     id     = "cleanup_old_files"
     status = "Enabled"
 
+    filter {
+      prefix = ""
+    }
+
     expiration {
       days = 7
     }
