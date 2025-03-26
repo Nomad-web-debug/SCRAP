@@ -24,11 +24,6 @@ jobs:
       with:
         terraform_version: 1.5.0
 
-    - name: Create Terraform Directory
-      run: |
-        mkdir -p terraform
-        mv main.tf terraform/
-        
     - name: Package Application
       run: |
         zip -r app.zip app/ scripts/ requirements.txt
