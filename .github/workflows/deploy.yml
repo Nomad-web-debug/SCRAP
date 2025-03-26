@@ -7,6 +7,7 @@ on:
 
 env:
   TF_WORKSPACE: prod
+  AWS_REGION: us-east-2
 
 jobs:
   deploy:
@@ -20,7 +21,7 @@ jobs:
       with:
         aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-        aws-region: us-east-2
+        aws-region: ${{ env.AWS_REGION }}
 
     - name: Setup Terraform
       uses: hashicorp/setup-terraform@v1
@@ -48,27 +49,22 @@ jobs:
       if: steps.plan.outcome == 'failure'
       run: exit 1
 
-    - name: Terraform Apply
-      id: apply
+    - name: Terraform Apply and Get Outputs
+      id: terraform
       run: |
         cd terraform
         terraform apply -auto-approve tfplan
-        BUCKET_NAME=$(terraform output -raw s3_bucket || echo "")
-        if [ -n "$BUCKET_NAME" ]; then
-          echo "bucket_name=$BUCKET_NAME" >> $GITHUB_ENV
-        else
+        echo "bucket_name=$(terraform output -raw s3_bucket)" >> "$GITHUB_ENV"
+
+    - name: Upload Application to S3
+      run: |
+        bucket_name="${{ env.bucket_name }}"
+        if [ -z "$bucket_name" ]; then
           echo "Error: No se pudo obtener el nombre del bucket"
           exit 1
         fi
-
-    - name: Upload Application to S3
-      if: success()
-      run: |
-        if [ -n "${{ env.bucket_name }}" ]; then
-          aws s3 cp app.zip "s3://${{ env.bucket_name }}/"
-          aws s3 cp scripts/init.sh "s3://${{ env.bucket_name }}/"
-          aws s3 cp scripts/check_idle.sh "s3://${{ env.bucket_name }}/"
-        else
-          echo "Error: Nombre del bucket no disponible"
-          exit 1
-        fi 
+        
+        echo "Subiendo archivos al bucket: $bucket_name"
+        aws s3 cp app.zip "s3://$bucket_name/app.zip"
+        aws s3 cp scripts/init.sh "s3://$bucket_name/init.sh"
+        aws s3 cp scripts/check_idle.sh "s3://$bucket_name/check_idle.sh" 
