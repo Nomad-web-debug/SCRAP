@@ -5,6 +5,9 @@ on:
     branches: [ main ]
   workflow_dispatch:
 
+env:
+  TF_WORKSPACE: prod
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
@@ -33,31 +36,39 @@ jobs:
       run: |
         cd terraform
         terraform init -input=false
-      continue-on-error: true
-
-    - name: Terraform Workspace
-      if: steps.init.outcome == 'success'
-      run: |
-        cd terraform
-        terraform workspace new prod || terraform workspace select prod
 
     - name: Terraform Plan
-      if: steps.init.outcome == 'success'
+      id: plan
       run: |
         cd terraform
         terraform plan -input=false -out=tfplan
+      continue-on-error: true
+
+    - name: Terraform Plan Status
+      if: steps.plan.outcome == 'failure'
+      run: exit 1
 
     - name: Terraform Apply
-      if: steps.init.outcome == 'success'
       id: apply
       run: |
         cd terraform
         terraform apply -auto-approve tfplan
-        echo "s3_bucket=$(terraform output -raw s3_bucket)" >> $GITHUB_OUTPUT
+        BUCKET_NAME=$(terraform output -raw s3_bucket || echo "")
+        if [ -n "$BUCKET_NAME" ]; then
+          echo "bucket_name=$BUCKET_NAME" >> $GITHUB_ENV
+        else
+          echo "Error: No se pudo obtener el nombre del bucket"
+          exit 1
+        fi
 
     - name: Upload Application to S3
-      if: steps.apply.outcome == 'success'
+      if: success()
       run: |
-        aws s3 cp app.zip s3://${{ steps.apply.outputs.s3_bucket }}/
-        aws s3 cp scripts/init.sh s3://${{ steps.apply.outputs.s3_bucket }}/
-        aws s3 cp scripts/check_idle.sh s3://${{ steps.apply.outputs.s3_bucket }}/ 
+        if [ -n "${{ env.bucket_name }}" ]; then
+          aws s3 cp app.zip "s3://${{ env.bucket_name }}/"
+          aws s3 cp scripts/init.sh "s3://${{ env.bucket_name }}/"
+          aws s3 cp scripts/check_idle.sh "s3://${{ env.bucket_name }}/"
+        else
+          echo "Error: Nombre del bucket no disponible"
+          exit 1
+        fi 
