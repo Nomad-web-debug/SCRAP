@@ -297,21 +297,38 @@ jobs:
 
     - name: Check for Errors
       if: always()
+      env:
+        BUCKET_NAME: ${{ needs.deploy.outputs.bucket }}
       run: |
+        if [ -z "$BUCKET_NAME" ]; then
+          echo "Error: BUCKET_NAME no está definido"
+          exit 1
+        fi
+        
         python -c "
         import boto3
         import os
         
-        s3 = boto3.client('s3')
         bucket = os.getenv('BUCKET_NAME')
-        
-        # Verificar si hay archivos de error
-        errors = list(s3.list_objects_v2(Bucket=bucket, Prefix='errors/').get('Contents', []))
-        
-        if errors:
-            print('Se encontraron errores durante el procesamiento:')
-            for error in errors:
-                print(f'- {error["Key"]}')
+        if not bucket:
+            print('Error: BUCKET_NAME no está definido')
+            exit(1)
+            
+        try:
+            s3 = boto3.client('s3')
+            response = s3.list_objects_v2(Bucket=bucket, Prefix='errors/')
+            errors = list(response.get('Contents', []))
+            
+            if errors:
+                print('Se encontraron errores durante el procesamiento:')
+                for error in errors:
+                    print(f'- {error["Key"]}')
+                exit(1)
+            else:
+                print('No se encontraron errores')
+                
+        except Exception as e:
+            print(f'Error al verificar errores: {str(e)}')
             exit(1)
         "
       continue-on-error: true 
