@@ -57,45 +57,31 @@ jobs:
       shell: bash
       working-directory: terraform
       run: |
-        # Obtener el nombre del bucket y mostrarlo para debug
-        echo "Obteniendo outputs de Terraform..."
-        terraform output
+        # Obtener solo el valor del bucket sin formato adicional
+        BUCKET_NAME=$(terraform output -no-color s3_bucket | tr -d '"' | tr -d ' ')
         
-        echo "Obteniendo nombre del bucket..."
-        BUCKET_NAME=$(terraform output -raw s3_bucket || echo "")
-        
-        echo "Nombre del bucket obtenido: '$BUCKET_NAME'"
-        
-        if [[ -n "$BUCKET_NAME" ]]; then
+        if [[ -n "$BUCKET_NAME" && "$BUCKET_NAME" != "null" ]]; then
+          # Guardar el nombre del bucket de forma simple
           echo "bucket=$BUCKET_NAME" >> "$GITHUB_OUTPUT"
-          echo "BUCKET_NAME=$BUCKET_NAME" >> "$GITHUB_ENV"
-          echo "✓ Nombre del bucket guardado: $BUCKET_NAME"
+          echo "Bucket name: $BUCKET_NAME"
         else
-          echo "✗ Error: No se pudo obtener el nombre del bucket"
+          echo "Error: No se pudo obtener el nombre del bucket"
           exit 1
         fi
 
     - name: Upload to S3
-      if: success() && steps.bucket.outputs.bucket != ''
+      if: success()
       run: |
         BUCKET="${{ steps.bucket.outputs.bucket }}"
-        echo "Intentando acceder al bucket: $BUCKET"
-        
-        # Esperar hasta 30 segundos para que el bucket esté disponible
-        for i in {1..6}; do
-          if aws s3api head-bucket --bucket "$BUCKET" 2>/dev/null; then
-            echo "✓ Bucket accesible, procediendo con la carga..."
-            aws s3 cp app.zip "s3://$BUCKET/app.zip"
-            aws s3 cp scripts/init.sh "s3://$BUCKET/init.sh"
-            aws s3 cp scripts/check_idle.sh "s3://$BUCKET/check_idle.sh"
-            exit 0
-          fi
-          echo "Esperando que el bucket esté disponible... intento $i de 6"
-          sleep 5
-        done
-        
-        echo "✗ Error: No se pudo acceder al bucket después de 30 segundos"
-        exit 1
+        if [[ -n "$BUCKET" ]]; then
+          echo "Subiendo archivos al bucket: $BUCKET"
+          aws s3 cp app.zip "s3://$BUCKET/app.zip"
+          aws s3 cp scripts/init.sh "s3://$BUCKET/init.sh"
+          aws s3 cp scripts/check_idle.sh "s3://$BUCKET/check_idle.sh"
+        else
+          echo "Error: Nombre de bucket no válido"
+          exit 1
+        fi
 
     - name: Verificar Despliegue
       if: success()
