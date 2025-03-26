@@ -57,29 +57,36 @@ jobs:
       shell: bash
       working-directory: terraform
       run: |
-        # Obtener solo el valor del bucket sin formato adicional
-        BUCKET_NAME=$(terraform output -no-color s3_bucket | tr -d '"' | tr -d ' ')
+        # Guardar el output en un archivo temporal
+        terraform output s3_bucket > bucket_name.txt
         
-        if [[ -n "$BUCKET_NAME" && "$BUCKET_NAME" != "null" ]]; then
-          # Guardar el nombre del bucket de forma simple
-          echo "bucket=$BUCKET_NAME" >> "$GITHUB_OUTPUT"
-          echo "Bucket name: $BUCKET_NAME"
+        # Leer y limpiar el nombre del bucket
+        BUCKET_NAME=$(cat bucket_name.txt | tr -d '"' | tr -d ' ' || echo "")
+        rm bucket_name.txt
+        
+        # Verificar y guardar el nombre del bucket
+        if [[ "$BUCKET_NAME" =~ ^clasificador-docs-[a-z0-9]+$ ]]; then
+          echo "bucket=${BUCKET_NAME}" >> $GITHUB_OUTPUT
+          echo "Nombre del bucket: ${BUCKET_NAME}"
         else
-          echo "Error: No se pudo obtener el nombre del bucket"
+          echo "Error: Nombre de bucket inválido: '${BUCKET_NAME}'"
           exit 1
         fi
 
     - name: Upload to S3
       if: success()
       run: |
+        # Obtener y validar el nombre del bucket
         BUCKET="${{ steps.bucket.outputs.bucket }}"
-        if [[ -n "$BUCKET" ]]; then
-          echo "Subiendo archivos al bucket: $BUCKET"
-          aws s3 cp app.zip "s3://$BUCKET/app.zip"
-          aws s3 cp scripts/init.sh "s3://$BUCKET/init.sh"
-          aws s3 cp scripts/check_idle.sh "s3://$BUCKET/check_idle.sh"
+        
+        echo "Verificando bucket: ${BUCKET}"
+        if aws s3api head-bucket --bucket "${BUCKET}" 2>/dev/null; then
+          echo "Subiendo archivos al bucket: ${BUCKET}"
+          aws s3 cp app.zip "s3://${BUCKET}/app.zip"
+          aws s3 cp scripts/init.sh "s3://${BUCKET}/init.sh"
+          aws s3 cp scripts/check_idle.sh "s3://${BUCKET}/check_idle.sh"
         else
-          echo "Error: Nombre de bucket no válido"
+          echo "Error: No se puede acceder al bucket: ${BUCKET}"
           exit 1
         fi
 
