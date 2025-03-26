@@ -145,11 +145,18 @@ resource "random_string" "suffix" {
   length  = 8
   special = false
   upper   = false
+  min_lower = 1
+  min_numeric = 1
 }
 
 # S3 Bucket
 resource "aws_s3_bucket" "app" {
-  bucket = "clasificador-documentos-${random_string.suffix.result}"
+  bucket = "clasificador-docs-${random_string.suffix.result}"
+
+  tags = {
+    Name = "clasificador-documentos"
+    Environment = "production"
+  }
 }
 
 resource "aws_s3_bucket_versioning" "app" {

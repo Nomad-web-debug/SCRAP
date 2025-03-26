@@ -33,50 +33,40 @@ jobs:
         zip -r app.zip app/ scripts/ requirements.txt
 
     - name: Terraform Init
-      id: init
       run: |
         cd terraform
         terraform init -input=false
 
     - name: Terraform Plan
-      id: plan
       run: |
         cd terraform
         terraform plan -input=false -out=tfplan
-      continue-on-error: true
-
-    - name: Terraform Plan Status
-      if: steps.plan.outcome == 'failure'
-      run: exit 1
 
     - name: Terraform Apply
-      id: apply
       run: |
         cd terraform
         terraform apply -auto-approve tfplan
 
-    - name: Get S3 Bucket Name
-      id: get-bucket
+    - name: Save Bucket Name
       run: |
         cd terraform
         BUCKET_NAME=$(terraform output -raw s3_bucket)
-        echo "::set-output name=bucket::$BUCKET_NAME"
+        echo "BUCKET_NAME=$BUCKET_NAME" >> $GITHUB_ENV
 
-    - name: Upload Application to S3
+    - name: Upload to S3
       run: |
-        BUCKET="${{ steps.get-bucket.outputs.bucket }}"
-        if [ -z "$BUCKET" ]; then
-          echo "Error: No se pudo obtener el nombre del bucket"
+        if [[ -n "$BUCKET_NAME" && "$BUCKET_NAME" =~ ^[a-zA-Z0-9\._-]+$ ]]; then
+          echo "Subiendo archivos al bucket: $BUCKET_NAME"
+          aws s3 cp app.zip "s3://$BUCKET_NAME/app.zip"
+          aws s3 cp scripts/init.sh "s3://$BUCKET_NAME/init.sh"
+          aws s3 cp scripts/check_idle.sh "s3://$BUCKET_NAME/check_idle.sh"
+        else
+          echo "Error: Nombre de bucket inválido: $BUCKET_NAME"
           exit 1
         fi
-        
-        echo "Subiendo archivos al bucket: $BUCKET"
-        aws s3 cp app.zip "s3://$BUCKET/app.zip"
-        aws s3 cp scripts/init.sh "s3://$BUCKET/init.sh"
-        aws s3 cp scripts/check_idle.sh "s3://$BUCKET/check_idle.sh"
 
     - name: Verificar Despliegue
       run: |
         echo "Infraestructura desplegada correctamente"
-        echo "Bucket S3: ${{ steps.get-bucket.outputs.bucket }}"
+        echo "Bucket S3: $BUCKET_NAME"
         echo "Región: ${{ env.AWS_REGION }}" 
