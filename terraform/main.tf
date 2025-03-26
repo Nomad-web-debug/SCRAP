@@ -13,14 +13,41 @@ resource "aws_vpc" "main" {
   }
 }
 
+resource "aws_internet_gateway" "main" {
+  vpc_id = aws_vpc.main.id
+
+  tags = {
+    Name = "clasificador-igw"
+  }
+}
+
 resource "aws_subnet" "public" {
   vpc_id     = aws_vpc.main.id
   cidr_block = "10.0.1.0/24"
   availability_zone = "us-east-2a"
+  map_public_ip_on_launch = true
 
   tags = {
     Name = "clasificador-subnet-public"
   }
+}
+
+resource "aws_route_table" "public" {
+  vpc_id = aws_vpc.main.id
+
+  route {
+    cidr_block = "0.0.0.0/0"
+    gateway_id = aws_internet_gateway.main.id
+  }
+
+  tags = {
+    Name = "clasificador-rt-public"
+  }
+}
+
+resource "aws_route_table_association" "public" {
+  subnet_id      = aws_subnet.public.id
+  route_table_id = aws_route_table.public.id
 }
 
 # Security Group
@@ -36,11 +63,22 @@ resource "aws_security_group" "ec2" {
     cidr_blocks = ["0.0.0.0/0"]
   }
 
+  ingress {
+    from_port   = 22
+    to_port     = 22
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
   egress {
     from_port   = 0
     to_port     = 0
     protocol    = "-1"
     cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = {
+    Name = "clasificador-sg"
   }
 }
 
@@ -56,11 +94,43 @@ resource "aws_s3_bucket_versioning" "app" {
   }
 }
 
+# IAM Role para EC2
+resource "aws_iam_role" "ec2_role" {
+  name = "clasificador_ec2_role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = "sts:AssumeRole"
+        Effect = "Allow"
+        Principal = {
+          Service = "ec2.amazonaws.com"
+        }
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "s3_access" {
+  role       = aws_iam_role.ec2_role.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess"
+}
+
+resource "aws_iam_instance_profile" "ec2_profile" {
+  name = "clasificador_ec2_profile"
+  role = aws_iam_role.ec2_role.name
+}
+
 # Launch Template
 resource "aws_launch_template" "app" {
   name = "clasificador-documentos-template"
   image_id = "ami-0430580de6244e02e"
   instance_type = "t3.medium"
+
+  iam_instance_profile {
+    name = aws_iam_instance_profile.ec2_profile.name
+  }
 
   network_interfaces {
     associate_public_ip_address = true
@@ -69,14 +139,24 @@ resource "aws_launch_template" "app" {
 
   user_data = base64encode(<<-EOF
               #!/bin/bash
+              yum update -y
+              yum install -y python3-pip unzip
+              mkdir -p /opt/clasificador
               cd /opt/clasificador
-              aws s3 cp s3://clasificador-documentos-app/app.zip .
+              aws s3 cp s3://${aws_s3_bucket.app.bucket}/app.zip .
               unzip app.zip
               pip3 install -r requirements.txt
               chown -R ec2-user:ec2-user /opt/clasificador
               su -c "python3 app/main.py" ec2-user
               EOF
   )
+
+  tag_specifications {
+    resource_type = "instance"
+    tags = {
+      Name = "ClasificadorDocumentos"
+    }
+  }
 }
 
 # Auto Scaling Group

@@ -19,22 +19,36 @@ jobs:
         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         aws-region: us-east-2
 
-    - name: Create S3 bucket
-      run: |
-        aws s3api create-bucket \
-          --bucket clasificador-documentos-app \
-          --region us-east-2 \
-          --create-bucket-configuration LocationConstraint=us-east-2
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v1
+      with:
+        terraform_version: 1.0.0
 
-    - name: Upload application files
+    - name: Package Application
       run: |
         zip -r app.zip app/ scripts/ requirements.txt
-        aws s3 cp app.zip s3://clasificador-documentos-app/
 
-    - name: Update EC2 user data script
+    - name: Terraform Init
       run: |
-        aws s3 cp scripts/init.sh s3://clasificador-documentos-app/
-        aws s3 cp scripts/check_idle.sh s3://clasificador-documentos-app/
+        cd terraform
+        terraform init
+
+    - name: Terraform Plan
+      run: |
+        cd terraform
+        terraform plan -out=tfplan
+
+    - name: Terraform Apply
+      run: |
+        cd terraform
+        terraform apply -auto-approve tfplan
+
+    - name: Upload Application to S3
+      run: |
+        BUCKET_NAME=$(cd terraform && terraform output -raw s3_bucket)
+        aws s3 cp app.zip s3://$BUCKET_NAME/
+        aws s3 cp scripts/init.sh s3://$BUCKET_NAME/
+        aws s3 cp scripts/check_idle.sh s3://$BUCKET_NAME/
 
     - name: Create EC2 Launch Template
       run: |
