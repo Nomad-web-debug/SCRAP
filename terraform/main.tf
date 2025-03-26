@@ -139,7 +139,7 @@ resource "aws_iam_instance_profile" "ec2_profile" {
 
 # Launch Template
 resource "aws_launch_template" "app" {
-  name = "clasificador-documentos-template"
+  name = "clasificador-documentos-template-${random_string.suffix.result}"
   image_id = "ami-0430580de6244e02e"
   instance_type = "t3.medium"
 
@@ -150,6 +150,7 @@ resource "aws_launch_template" "app" {
   network_interfaces {
     associate_public_ip_address = true
     security_groups = [aws_security_group.ec2.id]
+    subnet_id = aws_subnet.public.id
   }
 
   user_data = base64encode(<<-EOF
@@ -172,11 +173,15 @@ resource "aws_launch_template" "app" {
       Name = "ClasificadorDocumentos"
     }
   }
+
+  tags = {
+    Name = "clasificador-launch-template"
+  }
 }
 
 # Auto Scaling Group
 resource "aws_autoscaling_group" "app" {
-  name = "clasificador-documentos-asg"
+  name = "clasificador-documentos-asg-${random_string.suffix.result}"
   desired_capacity = 0
   max_size = 1
   min_size = 0
