@@ -54,41 +54,19 @@ jobs:
 
     - name: Get Bucket Name
       id: bucket
-      shell: bash
       working-directory: terraform
       run: |
-        # Guardar el output en un archivo temporal
-        terraform output s3_bucket > bucket_name.txt
-        
-        # Leer y limpiar el nombre del bucket
-        BUCKET_NAME=$(cat bucket_name.txt | tr -d '"' | tr -d ' ' || echo "")
-        rm bucket_name.txt
-        
-        # Verificar y guardar el nombre del bucket
-        if [[ "$BUCKET_NAME" =~ ^clasificador-docs-[a-z0-9]+$ ]]; then
-          echo "bucket=${BUCKET_NAME}" >> $GITHUB_OUTPUT
-          echo "Nombre del bucket: ${BUCKET_NAME}"
-        else
-          echo "Error: Nombre de bucket inválido: '${BUCKET_NAME}'"
-          exit 1
-        fi
+        echo "bucket=$(terraform output -raw s3_bucket)" >> "$GITHUB_OUTPUT"
 
     - name: Upload to S3
       if: success()
+      env:
+        BUCKET: ${{ steps.bucket.outputs.bucket }}
       run: |
-        # Obtener y validar el nombre del bucket
-        BUCKET="${{ steps.bucket.outputs.bucket }}"
-        
-        echo "Verificando bucket: ${BUCKET}"
-        if aws s3api head-bucket --bucket "${BUCKET}" 2>/dev/null; then
-          echo "Subiendo archivos al bucket: ${BUCKET}"
-          aws s3 cp app.zip "s3://${BUCKET}/app.zip"
-          aws s3 cp scripts/init.sh "s3://${BUCKET}/init.sh"
-          aws s3 cp scripts/check_idle.sh "s3://${BUCKET}/check_idle.sh"
-        else
-          echo "Error: No se puede acceder al bucket: ${BUCKET}"
-          exit 1
-        fi
+        echo "Subiendo archivos al bucket: $BUCKET"
+        aws s3 cp app.zip "s3://$BUCKET/app.zip"
+        aws s3 cp scripts/init.sh "s3://$BUCKET/init.sh"
+        aws s3 cp scripts/check_idle.sh "s3://$BUCKET/check_idle.sh"
 
     - name: Verificar Despliegue
       if: success()
