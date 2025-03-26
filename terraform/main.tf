@@ -107,7 +107,7 @@ resource "aws_s3_bucket_versioning" "app" {
 
 # IAM Role para EC2
 resource "aws_iam_role" "ec2_role" {
-  name = "clasificador_ec2_role"
+  name = "clasificador_ec2_role_${random_string.suffix.result}"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -121,6 +121,10 @@ resource "aws_iam_role" "ec2_role" {
       }
     ]
   })
+
+  tags = {
+    Name = "clasificador-ec2-role"
+  }
 }
 
 resource "aws_iam_role_policy_attachment" "s3_access" {
@@ -129,7 +133,7 @@ resource "aws_iam_role_policy_attachment" "s3_access" {
 }
 
 resource "aws_iam_instance_profile" "ec2_profile" {
-  name = "clasificador_ec2_profile"
+  name = "clasificador_ec2_profile_${random_string.suffix.result}"
   role = aws_iam_role.ec2_role.name
 }
 
