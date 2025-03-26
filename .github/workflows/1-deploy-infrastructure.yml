@@ -55,11 +55,37 @@ jobs:
       id: tf-outputs
       working-directory: ./terraform
       run: |
-        echo "bucket=$(terraform output -raw s3_bucket)" >> $GITHUB_OUTPUT
-        echo "db_host=$(terraform output -raw db_host)" >> $GITHUB_OUTPUT
-        echo "db_port=$(terraform output -raw db_port)" >> $GITHUB_OUTPUT
-        echo "db_name=$(terraform output -raw db_name)" >> $GITHUB_OUTPUT
-        echo "db_user=$(terraform output -raw db_user)" >> $GITHUB_OUTPUT
+        # Esperar un momento para asegurar que los outputs estén disponibles
+        sleep 10
+        
+        # Obtener y validar cada output individualmente
+        BUCKET=$(terraform output -raw s3_bucket || echo "")
+        DB_HOST=$(terraform output -raw db_host || echo "")
+        DB_PORT=$(terraform output -raw db_port || echo "")
+        DB_NAME=$(terraform output -raw db_name || echo "")
+        DB_USER=$(terraform output -raw db_user || echo "")
+        
+        # Validar que tenemos los valores necesarios
+        if [ -z "$BUCKET" ]; then
+          echo "Error: No se pudo obtener el nombre del bucket"
+          exit 1
+        fi
+        
+        if [ -z "$DB_HOST" ]; then
+          echo "Error: No se pudo obtener el host de la base de datos"
+          exit 1
+        fi
+        
+        # Guardar los outputs validados
+        echo "bucket=${BUCKET}" >> $GITHUB_OUTPUT
+        echo "db_host=${DB_HOST}" >> $GITHUB_OUTPUT
+        echo "db_port=${DB_PORT}" >> $GITHUB_OUTPUT
+        echo "db_name=${DB_NAME}" >> $GITHUB_OUTPUT
+        echo "db_user=${DB_USER}" >> $GITHUB_OUTPUT
+        
+        # Imprimir valores para verificación (sin credenciales sensibles)
+        echo "Bucket name: ${BUCKET}"
+        echo "Database host: ${DB_HOST}"
 
     - name: Create Config File
       run: |

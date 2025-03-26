@@ -6,6 +6,12 @@ on:
     types:
       - completed
   workflow_dispatch:
+    inputs:
+      force_run:
+        description: 'Forzar ejecución incluso si ya se procesó'
+        required: false
+        type: boolean
+        default: false
 
 env:
   AWS_REGION: us-east-2
@@ -14,7 +20,54 @@ env:
   RETRY_DELAY: 300  # 5 minutos entre reintentos
 
 jobs:
+  check-previous-runs:
+    runs-on: ubuntu-latest
+    outputs:
+      should_run: ${{ steps.check.outputs.should_run }}
+    steps:
+      - name: Check Previous Successful Runs
+        id: check
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            
+            // Verificar si este es un workflow_dispatch con force_run
+            if (context.eventName === 'workflow_dispatch' && context.payload.inputs.force_run) {
+              console.log('Ejecución forzada manualmente');
+              return core.setOutput('should_run', 'true');
+            }
+            
+            // Buscar ejecuciones exitosas del workflow completo
+            const fullWorkflowRuns = await github.rest.actions.listWorkflowRuns({
+              owner,
+              repo,
+              workflow_id: 'deploy-and-process.yml',
+              status: 'success',
+              per_page: 1
+            });
+            
+            if (fullWorkflowRuns.data.total_count > 0) {
+              const latestSuccessfulRun = fullWorkflowRuns.data.workflow_runs[0];
+              const currentRun = await github.rest.actions.getWorkflowRun({
+                owner,
+                repo,
+                run_id: context.runId
+              });
+              
+              // Si hay una ejecución exitosa más reciente que este intento
+              if (new Date(latestSuccessfulRun.created_at) > new Date(currentRun.data.created_at)) {
+                console.log('Ya existe una ejecución exitosa más reciente del workflow completo');
+                core.setOutput('should_run', 'false');
+                return;
+              }
+            }
+            
+            core.setOutput('should_run', 'true');
+
   check-api:
+    needs: check-previous-runs
+    if: needs.check-previous-runs.outputs.should_run == 'true'
     runs-on: ubuntu-latest
     outputs:
       api_status: ${{ steps.check-api.outputs.status }}
@@ -22,6 +75,8 @@ jobs:
     - name: Check API Status
       id: check-api
       run: |
+        python -m pip install --upgrade pip
+        pip install anthropic
         python -c "
         import anthropic
         import os
@@ -36,22 +91,22 @@ jobs:
                 messages=[{'role': 'user', 'content': 'Test'}]
             )
             print('API funcionando correctamente')
-            print('::set-output name=status::ok')
+            echo "status=ok" >> $GITHUB_OUTPUT
         except anthropic.RateLimitError:
             print('Error: Rate limit excedido')
-            print('::set-output name=status::rate_limit')
+            echo "status=rate_limit" >> $GITHUB_OUTPUT
             sys.exit(1)
         except anthropic.APIError as e:
             if 'insufficient_quota' in str(e):
                 print('Error: Crédito insuficiente')
-                print('::set-output name=status::no_credit')
+                echo "status=no_credit" >> $GITHUB_OUTPUT
             else:
                 print(f'Error de API: {str(e)}')
-                print('::set-output name=status::api_error')
+                echo "status=api_error" >> $GITHUB_OUTPUT
             sys.exit(1)
         except Exception as e:
             print(f'Error inesperado: {str(e)}')
-            print('::set-output name=status::error')
+            echo "status=error" >> $GITHUB_OUTPUT
             sys.exit(1)
         "
 

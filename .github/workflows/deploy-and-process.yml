@@ -1,0 +1,239 @@
+name: Deploy and Process All
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+env:
+  TF_WORKSPACE: prod
+  AWS_REGION: us-east-2
+  ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+  MAX_RETRIES: 3
+  RETRY_DELAY: 300
+
+jobs:
+  deploy-and-process:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v2
+
+    # 1. Configuración inicial
+    - name: Configure AWS Credentials
+      uses: aws-actions/configure-aws-credentials@v1
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
+
+    - name: Setup Python
+      uses: actions/setup-python@v2
+      with:
+        python-version: '3.9'
+
+    - name: Install Dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install anthropic boto3 sqlalchemy psycopg2-binary tenacity PyPDF2
+
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v1
+
+    # 2. Despliegue de infraestructura
+    - name: Terraform Init
+      working-directory: ./terraform
+      run: terraform init
+
+    - name: Terraform Plan
+      working-directory: ./terraform
+      run: terraform plan -out=tfplan
+
+    - name: Terraform Apply
+      working-directory: ./terraform
+      run: terraform apply -auto-approve tfplan
+
+    - name: Get Infrastructure Outputs
+      id: tf-outputs
+      working-directory: ./terraform
+      run: |
+        sleep 10
+        BUCKET=$(terraform output -raw s3_bucket || echo "")
+        DB_HOST=$(terraform output -raw db_host || echo "")
+        DB_PORT=$(terraform output -raw db_port || echo "")
+        DB_NAME=$(terraform output -raw db_name || echo "")
+        DB_USER=$(terraform output -raw db_user || echo "")
+        
+        if [ -z "$BUCKET" ] || [ -z "$DB_HOST" ]; then
+          echo "Error: No se pudieron obtener los outputs necesarios"
+          exit 1
+        fi
+        
+        echo "bucket=${BUCKET}" >> $GITHUB_OUTPUT
+        echo "db_host=${DB_HOST}" >> $GITHUB_OUTPUT
+        echo "db_port=${DB_PORT}" >> $GITHUB_OUTPUT
+        echo "db_name=${DB_NAME}" >> $GITHUB_OUTPUT
+        echo "db_user=${DB_USER}" >> $GITHUB_OUTPUT
+
+    # 3. Verificar API de Claude
+    - name: Check Claude API
+      id: check-api
+      run: |
+        python -c "
+        import anthropic
+        import os
+        import sys
+        
+        try:
+            client = anthropic.Client(api_key=os.getenv('ANTHROPIC_API_KEY'))
+            response = client.messages.create(
+                model='claude-3-sonnet-20240229',
+                max_tokens=10,
+                messages=[{'role': 'user', 'content': 'Test'}]
+            )
+            print('API funcionando correctamente')
+            exit(0)
+        except Exception as e:
+            print(f'Error con la API: {str(e)}')
+            exit(1)
+        "
+
+    # 4. Procesar PDFs
+    - name: Process PDFs
+      env:
+        BUCKET_NAME: ${{ steps.tf-outputs.outputs.bucket }}
+      run: |
+        python -c "
+        import boto3
+        import PyPDF2
+        import os
+        import json
+        from io import BytesIO
+        
+        def process_pdf(s3_client, bucket, key):
+            try:
+                response = s3_client.get_object(Bucket=bucket, Key=key)
+                pdf_file = BytesIO(response['Body'].read())
+                reader = PyPDF2.PdfReader(pdf_file)
+                
+                info = {
+                    'filename': key.split('/')[-1],
+                    'num_pages': len(reader.pages),
+                    'metadata': reader.metadata,
+                    'text_content': {},
+                    'processing_date': datetime.now().isoformat()
+                }
+                
+                for i, page in enumerate(reader.pages):
+                    info['text_content'][f'page_{i+1}'] = page.extract_text()
+                
+                output_key = key.replace('raw/', 'extracted/')
+                output_key = output_key.rsplit('.', 1)[0] + '.json'
+                
+                s3_client.put_object(
+                    Bucket=bucket,
+                    Key=output_key,
+                    Body=json.dumps(info, ensure_ascii=False),
+                    ContentType='application/json'
+                )
+                
+                return True
+            except Exception as e:
+                print(f'Error procesando {key}: {str(e)}')
+                return False
+        
+        def process_all_pdfs():
+            s3 = boto3.client('s3')
+            bucket = os.getenv('BUCKET_NAME')
+            
+            paginator = s3.get_paginator('list_objects_v2')
+            for page in paginator.paginate(Bucket=bucket, Prefix='raw/'):
+                for obj in page.get('Contents', []):
+                    if obj['Key'].endswith('.pdf'):
+                        print(f'Procesando {obj["Key"]}...')
+                        process_pdf(s3, bucket, obj['Key'])
+        
+        if __name__ == '__main__':
+            process_all_pdfs()
+        "
+
+    # 5. Categorizar contenido
+    - name: Categorize Content
+      if: success()
+      env:
+        BUCKET_NAME: ${{ steps.tf-outputs.outputs.bucket }}
+        DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+      run: |
+        python -c "
+        from app.processor import NormaProcessor
+        import boto3
+        import json
+        import os
+        
+        def process_content():
+            s3 = boto3.client('s3')
+            processor = NormaProcessor()
+            bucket = os.getenv('BUCKET_NAME')
+            
+            paginator = s3.get_paginator('list_objects_v2')
+            for page in paginator.paginate(Bucket=bucket, Prefix='extracted/'):
+                for obj in page.get('Contents', []):
+                    if obj['Key'].endswith('.json'):
+                        try:
+                            response = s3.get_object(Bucket=bucket, Key=obj['Key'])
+                            content = json.loads(response['Body'].read().decode('utf-8'))
+                            
+                            full_text = '\n'.join(content['text_content'].values())
+                            metadata = processor.extract_metadata(
+                                text=full_text,
+                                filename=content['filename']
+                            )
+                            
+                            processor.save_to_database(metadata)
+                            
+                            output_key = obj['Key'].replace('extracted/', 'categorized/')
+                            s3.put_object(
+                                Bucket=bucket,
+                                Key=output_key,
+                                Body=json.dumps(metadata, ensure_ascii=False),
+                                ContentType='application/json'
+                            )
+                            
+                            print(f'Procesado exitosamente: {obj["Key"]}')
+                            
+                        except Exception as e:
+                            print(f'Error procesando {obj["Key"]}: {str(e)}')
+                            error_key = f'errors/{datetime.now().isoformat()}-{obj["Key"].split("/")[-1]}.error'
+                            s3.put_object(
+                                Bucket=bucket,
+                                Key=error_key,
+                                Body=json.dumps({
+                                    'file': obj['Key'],
+                                    'error': str(e),
+                                    'timestamp': datetime.now().isoformat()
+                                })
+                            )
+        
+        if __name__ == '__main__':
+            process_content()
+        "
+
+    # 6. Verificar errores
+    - name: Check for Errors
+      if: always()
+      run: |
+        python -c "
+        import boto3
+        import os
+        
+        s3 = boto3.client('s3')
+        bucket = os.getenv('BUCKET_NAME')
+        
+        errors = list(s3.list_objects_v2(Bucket=bucket, Prefix='errors/').get('Contents', []))
+        
+        if errors:
+            print('Se encontraron errores durante el procesamiento:')
+            for error in errors:
+                print(f'- {error["Key"]}')
+            exit(1)
+        " 
