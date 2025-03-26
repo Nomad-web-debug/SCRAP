@@ -57,21 +57,21 @@ jobs:
       shell: bash
       working-directory: terraform
       run: |
-        # Intentar obtener el nombre del bucket directamente
-        BUCKET_NAME=$(terraform output s3_bucket 2>/dev/null || echo "")
+        # Obtener el nombre del bucket y mostrarlo para debug
+        echo "Obteniendo outputs de Terraform..."
+        terraform output
         
-        # Limpiar cualquier comilla o espacio en blanco
-        BUCKET_NAME=$(echo "$BUCKET_NAME" | tr -d '"' | tr -d ' ')
+        echo "Obteniendo nombre del bucket..."
+        BUCKET_NAME=$(terraform output -raw s3_bucket || echo "")
         
-        echo "Bucket name obtenido: '$BUCKET_NAME'"
+        echo "Nombre del bucket obtenido: '$BUCKET_NAME'"
         
-        if [[ -n "$BUCKET_NAME" && "$BUCKET_NAME" =~ ^clasificador-docs-[a-z0-9]{8}$ ]]; then
-          echo "BUCKET_NAME=$BUCKET_NAME" >> "$GITHUB_ENV"
+        if [[ -n "$BUCKET_NAME" ]]; then
           echo "bucket=$BUCKET_NAME" >> "$GITHUB_OUTPUT"
-          echo "Nombre del bucket válido: $BUCKET_NAME"
+          echo "BUCKET_NAME=$BUCKET_NAME" >> "$GITHUB_ENV"
+          echo "✓ Nombre del bucket guardado: $BUCKET_NAME"
         else
-          echo "Error: Nombre de bucket inválido o vacío: '$BUCKET_NAME'"
-          terraform output
+          echo "✗ Error: No se pudo obtener el nombre del bucket"
           exit 1
         fi
 
@@ -79,16 +79,23 @@ jobs:
       if: success() && steps.bucket.outputs.bucket != ''
       run: |
         BUCKET="${{ steps.bucket.outputs.bucket }}"
-        echo "Verificando bucket: $BUCKET"
-        if aws s3api head-bucket --bucket "$BUCKET" 2>/dev/null; then
-          echo "Subiendo archivos al bucket: $BUCKET"
-          aws s3 cp app.zip "s3://$BUCKET/app.zip"
-          aws s3 cp scripts/init.sh "s3://$BUCKET/init.sh"
-          aws s3 cp scripts/check_idle.sh "s3://$BUCKET/check_idle.sh"
-        else
-          echo "Error: No se puede acceder al bucket: $BUCKET"
-          exit 1
-        fi
+        echo "Intentando acceder al bucket: $BUCKET"
+        
+        # Esperar hasta 30 segundos para que el bucket esté disponible
+        for i in {1..6}; do
+          if aws s3api head-bucket --bucket "$BUCKET" 2>/dev/null; then
+            echo "✓ Bucket accesible, procediendo con la carga..."
+            aws s3 cp app.zip "s3://$BUCKET/app.zip"
+            aws s3 cp scripts/init.sh "s3://$BUCKET/init.sh"
+            aws s3 cp scripts/check_idle.sh "s3://$BUCKET/check_idle.sh"
+            exit 0
+          fi
+          echo "Esperando que el bucket esté disponible... intento $i de 6"
+          sleep 5
+        done
+        
+        echo "✗ Error: No se pudo acceder al bucket después de 30 segundos"
+        exit 1
 
     - name: Verificar Despliegue
       if: success()

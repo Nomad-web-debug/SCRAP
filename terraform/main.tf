@@ -357,6 +357,7 @@ output "security_group_id" {
 }
 
 output "s3_bucket" {
-  value = aws_s3_bucket.app.id
-  description = "Nombre del bucket S3 creado"
+  value       = aws_s3_bucket.app.id
+  description = "Nombre del bucket S3"
+  depends_on  = [aws_s3_bucket.app]
 } 
