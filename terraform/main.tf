@@ -6,8 +6,22 @@ provider "aws" {
 provider "random" {
 }
 
+# Datos de VPC existente (si existe)
+data "aws_vpcs" "existing" {
+  tags = {
+    Name = "clasificador-vpc"
+  }
+}
+
+locals {
+  use_existing_vpc = length(data.aws_vpcs.existing.ids) > 0
+  vpc_id = local.use_existing_vpc ? data.aws_vpcs.existing.ids[0] : aws_vpc.main[0].id
+}
+
 # VPC y Networking
 resource "aws_vpc" "main" {
+  count = local.use_existing_vpc ? 0 : 1
+  
   cidr_block = "10.0.0.0/16"
   enable_dns_hostnames = true
   enable_dns_support = true
@@ -15,18 +29,47 @@ resource "aws_vpc" "main" {
   tags = {
     Name = "clasificador-vpc"
   }
+
+  lifecycle {
+    prevent_destroy = true
+  }
 }
 
+# Internet Gateway
 resource "aws_internet_gateway" "main" {
-  vpc_id = aws_vpc.main.id
+  count = local.use_existing_vpc ? 0 : 1
+  vpc_id = local.vpc_id
 
   tags = {
     Name = "clasificador-igw"
   }
+
+  lifecycle {
+    prevent_destroy = true
+  }
+}
+
+# Subnet pública
+data "aws_subnets" "existing" {
+  filter {
+    name   = "vpc-id"
+    values = [local.vpc_id]
+  }
+  
+  tags = {
+    Name = "clasificador-subnet-public"
+  }
+}
+
+locals {
+  use_existing_subnet = length(data.aws_subnets.existing.ids) > 0
+  subnet_id = local.use_existing_subnet ? data.aws_subnets.existing.ids[0] : aws_subnet.public[0].id
 }
 
 resource "aws_subnet" "public" {
-  vpc_id     = aws_vpc.main.id
+  count = local.use_existing_subnet ? 0 : 1
+  
+  vpc_id     = local.vpc_id
   cidr_block = "10.0.1.0/24"
   availability_zone = "us-east-2a"
   map_public_ip_on_launch = true
@@ -34,14 +77,20 @@ resource "aws_subnet" "public" {
   tags = {
     Name = "clasificador-subnet-public"
   }
+
+  lifecycle {
+    prevent_destroy = true
+  }
 }
 
+# Route Table
 resource "aws_route_table" "public" {
-  vpc_id = aws_vpc.main.id
+  count = local.use_existing_vpc ? 0 : 1
+  vpc_id = local.vpc_id
 
   route {
     cidr_block = "0.0.0.0/0"
-    gateway_id = aws_internet_gateway.main.id
+    gateway_id = aws_internet_gateway.main[0].id
   }
 
   tags = {
@@ -50,15 +99,16 @@ resource "aws_route_table" "public" {
 }
 
 resource "aws_route_table_association" "public" {
-  subnet_id      = aws_subnet.public.id
-  route_table_id = aws_route_table.public.id
+  count = local.use_existing_vpc ? 0 : 1
+  subnet_id      = local.subnet_id
+  route_table_id = aws_route_table.public[0].id
 }
 
 # Security Group
 resource "aws_security_group" "ec2" {
-  name        = "clasificador-sg"
+  name_prefix = "clasificador-sg-${random_string.suffix.result}"
   description = "Security group for clasificador EC2"
-  vpc_id      = aws_vpc.main.id
+  vpc_id      = local.vpc_id
 
   ingress {
     from_port   = 80
@@ -79,6 +129,10 @@ resource "aws_security_group" "ec2" {
     to_port     = 0
     protocol    = "-1"
     cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  lifecycle {
+    create_before_destroy = true
   }
 
   tags = {
@@ -139,7 +193,7 @@ resource "aws_iam_instance_profile" "ec2_profile" {
 
 # Launch Template
 resource "aws_launch_template" "app" {
-  name = "clasificador-documentos-template-${random_string.suffix.result}"
+  name_prefix = "clasificador-documentos-template-"
   image_id = "ami-0430580de6244e02e"
   instance_type = "t3.medium"
 
@@ -150,7 +204,7 @@ resource "aws_launch_template" "app" {
   network_interfaces {
     associate_public_ip_address = true
     security_groups = [aws_security_group.ec2.id]
-    subnet_id = aws_subnet.public.id
+    delete_on_termination = true
   }
 
   user_data = base64encode(<<-EOF
@@ -174,6 +228,10 @@ resource "aws_launch_template" "app" {
     }
   }
 
+  lifecycle {
+    create_before_destroy = true
+  }
+
   tags = {
     Name = "clasificador-launch-template"
   }
@@ -181,11 +239,13 @@ resource "aws_launch_template" "app" {
 
 # Auto Scaling Group
 resource "aws_autoscaling_group" "app" {
-  name = "clasificador-documentos-asg-${random_string.suffix.result}"
+  name_prefix = "clasificador-documentos-asg-"
   desired_capacity = 0
   max_size = 1
   min_size = 0
-  vpc_zone_identifier = [aws_subnet.public.id]
+  vpc_zone_identifier = [local.subnet_id]
+  health_check_type = "EC2"
+  health_check_grace_period = 300
 
   launch_template {
     id = aws_launch_template.app.id
@@ -197,11 +257,23 @@ resource "aws_autoscaling_group" "app" {
     value = "ClasificadorDocumentos"
     propagate_at_launch = true
   }
+
+  lifecycle {
+    create_before_destroy = true
+    ignore_changes = [desired_capacity]
+  }
+
+  instance_refresh {
+    strategy = "Rolling"
+    preferences {
+      min_healthy_percentage = 50
+    }
+  }
 }
 
-# CloudWatch Alarm
-resource "aws_cloudwatch_metric_alarm" "cpu" {
-  alarm_name = "clasificador-documentos-cpu"
+# CloudWatch Alarm para Auto Scaling
+resource "aws_cloudwatch_metric_alarm" "cpu_high" {
+  alarm_name = "clasificador-documentos-cpu-high"
   comparison_operator = "GreaterThanThreshold"
   evaluation_periods = "2"
   metric_name = "CPUUtilization"
@@ -209,10 +281,46 @@ resource "aws_cloudwatch_metric_alarm" "cpu" {
   period = "300"
   statistic = "Average"
   threshold = "70"
-  alarm_description = "This metric monitors EC2 CPU utilization"
+  alarm_description = "Scale up if CPU > 70% for 10 minutes"
   dimensions = {
     AutoScalingGroupName = aws_autoscaling_group.app.name
   }
+
+  alarm_actions = [aws_autoscaling_policy.scale_up.arn]
+}
+
+resource "aws_cloudwatch_metric_alarm" "cpu_low" {
+  alarm_name = "clasificador-documentos-cpu-low"
+  comparison_operator = "LessThanThreshold"
+  evaluation_periods = "2"
+  metric_name = "CPUUtilization"
+  namespace = "AWS/EC2"
+  period = "300"
+  statistic = "Average"
+  threshold = "30"
+  alarm_description = "Scale down if CPU < 30% for 10 minutes"
+  dimensions = {
+    AutoScalingGroupName = aws_autoscaling_group.app.name
+  }
+
+  alarm_actions = [aws_autoscaling_policy.scale_down.arn]
+}
+
+# Auto Scaling Policies
+resource "aws_autoscaling_policy" "scale_up" {
+  name = "clasificador-scale-up"
+  scaling_adjustment = 1
+  adjustment_type = "ChangeInCapacity"
+  cooldown = 300
+  autoscaling_group_name = aws_autoscaling_group.app.name
+}
+
+resource "aws_autoscaling_policy" "scale_down" {
+  name = "clasificador-scale-down"
+  scaling_adjustment = -1
+  adjustment_type = "ChangeInCapacity"
+  cooldown = 300
+  autoscaling_group_name = aws_autoscaling_group.app.name
 }
 
 # Outputs
