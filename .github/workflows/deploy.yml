@@ -55,18 +55,36 @@ jobs:
     - name: Get Bucket Name
       id: bucket
       working-directory: terraform
+      shell: bash
       run: |
-        echo "bucket=$(terraform output -raw s3_bucket)" >> "$GITHUB_OUTPUT"
+        # Obtener y limpiar el nombre del bucket
+        BUCKET_NAME=$(terraform output s3_bucket | sed -n 's/^"\(.*\)"$/\1/p')
+        
+        # Verificar que obtuvimos un nombre válido
+        if [[ -n "$BUCKET_NAME" ]]; then
+          echo "bucket=$BUCKET_NAME" >> "$GITHUB_OUTPUT"
+          echo "Nombre del bucket obtenido: $BUCKET_NAME"
+        else
+          echo "Error: No se pudo obtener el nombre del bucket"
+          terraform output
+          exit 1
+        fi
 
     - name: Upload to S3
       if: success()
       env:
         BUCKET: ${{ steps.bucket.outputs.bucket }}
+      shell: bash
       run: |
-        echo "Subiendo archivos al bucket: $BUCKET"
-        aws s3 cp app.zip "s3://$BUCKET/app.zip"
-        aws s3 cp scripts/init.sh "s3://$BUCKET/init.sh"
-        aws s3 cp scripts/check_idle.sh "s3://$BUCKET/check_idle.sh"
+        if [[ -n "$BUCKET" ]]; then
+          echo "Subiendo archivos al bucket: $BUCKET"
+          aws s3 cp app.zip "s3://$BUCKET/app.zip"
+          aws s3 cp scripts/init.sh "s3://$BUCKET/init.sh"
+          aws s3 cp scripts/check_idle.sh "s3://$BUCKET/check_idle.sh"
+        else
+          echo "Error: Nombre de bucket no válido o vacío"
+          exit 1
+        fi
 
     - name: Verificar Despliegue
       if: success()
