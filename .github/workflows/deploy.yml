@@ -14,17 +14,17 @@ jobs:
     runs-on: ubuntu-latest
     
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v3
 
     - name: Configure AWS Credentials
-      uses: aws-actions/configure-aws-credentials@v1
+      uses: aws-actions/configure-aws-credentials@v2
       with:
         aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         aws-region: ${{ env.AWS_REGION }}
 
     - name: Setup Terraform
-      uses: hashicorp/setup-terraform@v1
+      uses: hashicorp/setup-terraform@v2
       with:
         terraform_version: 1.5.0
 
@@ -33,46 +33,59 @@ jobs:
         zip -r app.zip app/ scripts/ requirements.txt
 
     - name: Terraform Init
+      id: init
       run: |
         cd terraform
         terraform init -input=false
+      continue-on-error: false
 
     - name: Terraform Plan
+      id: plan
       run: |
         cd terraform
         terraform plan -input=false -out=tfplan
+      continue-on-error: false
 
     - name: Terraform Apply
+      id: apply
       run: |
         cd terraform
         terraform apply -auto-approve tfplan
 
     - name: Get Bucket Name
       id: bucket
-      working-directory: terraform
+      shell: bash
       run: |
-        # Guardar la salida en un archivo temporal
-        terraform output -raw s3_bucket > bucket_name.txt
-        # Leer el archivo y validar el nombre
-        BUCKET_NAME=$(cat bucket_name.txt)
-        if [[ -n "$BUCKET_NAME" && "$BUCKET_NAME" =~ ^[a-zA-Z0-9\._-]+$ ]]; then
+        cd terraform
+        # Obtener y validar el nombre del bucket
+        BUCKET_NAME=$(terraform output -raw s3_bucket || echo "")
+        if [[ -n "$BUCKET_NAME" && "$BUCKET_NAME" =~ ^[a-zA-Z0-9][a-zA-Z0-9\._-]{1,61}[a-zA-Z0-9]$ ]]; then
+          echo "BUCKET_NAME=$BUCKET_NAME" >> "$GITHUB_ENV"
           echo "bucket=$BUCKET_NAME" >> "$GITHUB_OUTPUT"
         else
-          echo "Error: Nombre de bucket inválido: $BUCKET_NAME"
+          echo "Error: Nombre de bucket inválido: '$BUCKET_NAME'"
           exit 1
         fi
 
     - name: Upload to S3
-      if: steps.bucket.outputs.bucket != ''
+      if: success() && env.BUCKET_NAME != ''
+      shell: bash
       run: |
-        echo "Subiendo archivos al bucket: ${{ steps.bucket.outputs.bucket }}"
-        aws s3 cp app.zip "s3://${{ steps.bucket.outputs.bucket }}/app.zip"
-        aws s3 cp scripts/init.sh "s3://${{ steps.bucket.outputs.bucket }}/init.sh"
-        aws s3 cp scripts/check_idle.sh "s3://${{ steps.bucket.outputs.bucket }}/check_idle.sh"
+        echo "Subiendo archivos al bucket: $BUCKET_NAME"
+        aws s3 cp app.zip "s3://$BUCKET_NAME/app.zip"
+        aws s3 cp scripts/init.sh "s3://$BUCKET_NAME/init.sh"
+        aws s3 cp scripts/check_idle.sh "s3://$BUCKET_NAME/check_idle.sh"
 
     - name: Verificar Despliegue
-      if: steps.bucket.outputs.bucket != ''
+      if: success()
       run: |
         echo "Infraestructura desplegada correctamente"
-        echo "Bucket S3: ${{ steps.bucket.outputs.bucket }}"
-        echo "Región: ${{ env.AWS_REGION }}" 
+        echo "Bucket S3: $BUCKET_NAME"
+        echo "Región: ${{ env.AWS_REGION }}"
+
+    - name: Cleanup on Failure
+      if: failure()
+      run: |
+        echo "El despliegue falló. Iniciando limpieza..."
+        cd terraform
+        terraform destroy -auto-approve || true 

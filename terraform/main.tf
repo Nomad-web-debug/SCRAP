@@ -145,17 +145,21 @@ resource "random_string" "suffix" {
   length  = 8
   special = false
   upper   = false
-  min_lower = 1
-  min_numeric = 1
+  lower   = true
+  min_lower = 2
+  min_numeric = 2
+  numeric = true
 }
 
 # S3 Bucket
 resource "aws_s3_bucket" "app" {
   bucket = "clasificador-docs-${random_string.suffix.result}"
+  force_destroy = true
 
   tags = {
     Name = "clasificador-documentos"
     Environment = "production"
+    ManagedBy = "terraform"
   }
 }
 
@@ -164,6 +168,15 @@ resource "aws_s3_bucket_versioning" "app" {
   versioning_configuration {
     status = "Enabled"
   }
+}
+
+resource "aws_s3_bucket_public_access_block" "app" {
+  bucket = aws_s3_bucket.app.id
+
+  block_public_acls       = true
+  block_public_policy     = true
+  ignore_public_acls      = true
+  restrict_public_buckets = true
 }
 
 # IAM Role para EC2
@@ -344,5 +357,6 @@ output "security_group_id" {
 }
 
 output "s3_bucket" {
-  value = aws_s3_bucket.app.bucket
+  value = aws_s3_bucket.app.id
+  description = "Nombre del bucket S3 creado"
 } 
