@@ -57,24 +57,38 @@ jobs:
       shell: bash
       working-directory: terraform
       run: |
-        # Obtener el nombre del bucket de manera más segura
-        BUCKET_NAME=$(terraform output -json s3_bucket | jq -r '.')
+        # Intentar obtener el nombre del bucket directamente
+        BUCKET_NAME=$(terraform output s3_bucket 2>/dev/null || echo "")
+        
+        # Limpiar cualquier comilla o espacio en blanco
+        BUCKET_NAME=$(echo "$BUCKET_NAME" | tr -d '"' | tr -d ' ')
+        
+        echo "Bucket name obtenido: '$BUCKET_NAME'"
+        
         if [[ -n "$BUCKET_NAME" && "$BUCKET_NAME" =~ ^clasificador-docs-[a-z0-9]{8}$ ]]; then
           echo "BUCKET_NAME=$BUCKET_NAME" >> "$GITHUB_ENV"
           echo "bucket=$BUCKET_NAME" >> "$GITHUB_OUTPUT"
           echo "Nombre del bucket válido: $BUCKET_NAME"
         else
-          echo "Error: Nombre de bucket inválido: '$BUCKET_NAME'"
+          echo "Error: Nombre de bucket inválido o vacío: '$BUCKET_NAME'"
+          terraform output
           exit 1
         fi
 
     - name: Upload to S3
       if: success() && steps.bucket.outputs.bucket != ''
       run: |
-        echo "Subiendo archivos al bucket: ${{ steps.bucket.outputs.bucket }}"
-        aws s3 cp app.zip "s3://${{ steps.bucket.outputs.bucket }}/app.zip"
-        aws s3 cp scripts/init.sh "s3://${{ steps.bucket.outputs.bucket }}/init.sh"
-        aws s3 cp scripts/check_idle.sh "s3://${{ steps.bucket.outputs.bucket }}/check_idle.sh"
+        BUCKET="${{ steps.bucket.outputs.bucket }}"
+        echo "Verificando bucket: $BUCKET"
+        if aws s3api head-bucket --bucket "$BUCKET" 2>/dev/null; then
+          echo "Subiendo archivos al bucket: $BUCKET"
+          aws s3 cp app.zip "s3://$BUCKET/app.zip"
+          aws s3 cp scripts/init.sh "s3://$BUCKET/init.sh"
+          aws s3 cp scripts/check_idle.sh "s3://$BUCKET/check_idle.sh"
+        else
+          echo "Error: No se puede acceder al bucket: $BUCKET"
+          exit 1
+        fi
 
     - name: Verificar Despliegue
       if: success()
