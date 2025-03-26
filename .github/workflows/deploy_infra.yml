@@ -1,0 +1,55 @@
+name: Deploy Infrastructure
+
+on:
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v2
+
+    - name: Configure AWS Credentials
+      uses: aws-actions/configure-aws-credentials@v1
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: us-east-2
+
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v1
+      with:
+        terraform_version: 1.0.0
+
+    - name: Terraform Init
+      run: |
+        cd terraform
+        terraform init
+
+    - name: Terraform Plan
+      run: |
+        cd terraform
+        terraform plan -out=tfplan
+
+    - name: Terraform Apply
+      run: |
+        cd terraform
+        terraform apply -auto-approve tfplan
+
+    - name: Save Terraform Outputs
+      run: |
+        cd terraform
+        echo "RDS_ENDPOINT=$(terraform output -raw rds_endpoint)" >> $GITHUB_ENV
+        echo "S3_BUCKET=$(terraform output -raw s3_bucket)" >> $GITHUB_ENV
+        echo "ALB_DNS=$(terraform output -raw alb_dns)" >> $GITHUB_ENV
+
+    - name: Create Config File
+      run: |
+        cat > config.json << EOF
+        {
+          "rds_endpoint": "${{ env.RDS_ENDPOINT }}",
+          "s3_bucket": "${{ env.S3_BUCKET }}",
+          "alb_dns": "${{ env.ALB_DNS }}"
+        }
+        EOF 
