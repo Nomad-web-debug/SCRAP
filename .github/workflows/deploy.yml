@@ -55,32 +55,32 @@ jobs:
     - name: Get Bucket Name
       id: bucket
       shell: bash
+      working-directory: terraform
       run: |
-        cd terraform
-        # Obtener y validar el nombre del bucket
-        BUCKET_NAME=$(terraform output -raw s3_bucket || echo "")
-        if [[ -n "$BUCKET_NAME" && "$BUCKET_NAME" =~ ^[a-zA-Z0-9][a-zA-Z0-9\._-]{1,61}[a-zA-Z0-9]$ ]]; then
+        # Obtener el nombre del bucket de manera más segura
+        BUCKET_NAME=$(terraform output -json s3_bucket | jq -r '.')
+        if [[ -n "$BUCKET_NAME" && "$BUCKET_NAME" =~ ^clasificador-docs-[a-z0-9]{8}$ ]]; then
           echo "BUCKET_NAME=$BUCKET_NAME" >> "$GITHUB_ENV"
           echo "bucket=$BUCKET_NAME" >> "$GITHUB_OUTPUT"
+          echo "Nombre del bucket válido: $BUCKET_NAME"
         else
           echo "Error: Nombre de bucket inválido: '$BUCKET_NAME'"
           exit 1
         fi
 
     - name: Upload to S3
-      if: success() && env.BUCKET_NAME != ''
-      shell: bash
+      if: success() && steps.bucket.outputs.bucket != ''
       run: |
-        echo "Subiendo archivos al bucket: $BUCKET_NAME"
-        aws s3 cp app.zip "s3://$BUCKET_NAME/app.zip"
-        aws s3 cp scripts/init.sh "s3://$BUCKET_NAME/init.sh"
-        aws s3 cp scripts/check_idle.sh "s3://$BUCKET_NAME/check_idle.sh"
+        echo "Subiendo archivos al bucket: ${{ steps.bucket.outputs.bucket }}"
+        aws s3 cp app.zip "s3://${{ steps.bucket.outputs.bucket }}/app.zip"
+        aws s3 cp scripts/init.sh "s3://${{ steps.bucket.outputs.bucket }}/init.sh"
+        aws s3 cp scripts/check_idle.sh "s3://${{ steps.bucket.outputs.bucket }}/check_idle.sh"
 
     - name: Verificar Despliegue
       if: success()
       run: |
         echo "Infraestructura desplegada correctamente"
-        echo "Bucket S3: $BUCKET_NAME"
+        echo "Bucket S3: ${{ steps.bucket.outputs.bucket }}"
         echo "Región: ${{ env.AWS_REGION }}"
 
     - name: Cleanup on Failure
