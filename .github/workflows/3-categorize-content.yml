@@ -1,0 +1,262 @@
+name: 3. Categorize Content
+
+on:
+  workflow_run:
+    workflows: ["2. Extract PDF Information"]
+    types:
+      - completed
+  workflow_dispatch:
+
+env:
+  AWS_REGION: us-east-2
+  ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+  MAX_RETRIES: 3
+  RETRY_DELAY: 300  # 5 minutos entre reintentos
+
+jobs:
+  check-api:
+    runs-on: ubuntu-latest
+    outputs:
+      api_status: ${{ steps.check-api.outputs.status }}
+    steps:
+    - name: Check API Status
+      id: check-api
+      run: |
+        python -c "
+        import anthropic
+        import os
+        import sys
+        
+        try:
+            client = anthropic.Client(api_key=os.getenv('ANTHROPIC_API_KEY'))
+            # Intenta una llamada simple para verificar la API
+            response = client.messages.create(
+                model='claude-3-sonnet-20240229',
+                max_tokens=10,
+                messages=[{'role': 'user', 'content': 'Test'}]
+            )
+            print('API funcionando correctamente')
+            print('::set-output name=status::ok')
+        except anthropic.RateLimitError:
+            print('Error: Rate limit excedido')
+            print('::set-output name=status::rate_limit')
+            sys.exit(1)
+        except anthropic.APIError as e:
+            if 'insufficient_quota' in str(e):
+                print('Error: Crédito insuficiente')
+                print('::set-output name=status::no_credit')
+            else:
+                print(f'Error de API: {str(e)}')
+                print('::set-output name=status::api_error')
+            sys.exit(1)
+        except Exception as e:
+            print(f'Error inesperado: {str(e)}')
+            print('::set-output name=status::error')
+            sys.exit(1)
+        "
+
+  notify-status:
+    needs: check-api
+    runs-on: ubuntu-latest
+    if: needs.check-api.outputs.api_status != 'ok'
+    steps:
+    - name: Send API Status Notification
+      uses: actions/github-script@v6
+      with:
+        script: |
+          const status = '${{ needs.check-api.outputs.api_status }}';
+          let message = '';
+          
+          switch(status) {
+            case 'no_credit':
+              message = '⚠️ ALERTA: La API key de Claude no tiene crédito suficiente';
+              break;
+            case 'rate_limit':
+              message = '⚠️ ALERTA: Se ha alcanzado el límite de rate de la API';
+              break;
+            case 'api_error':
+              message = '❌ ERROR: Error en la API de Claude';
+              break;
+            default:
+              message = '❌ ERROR: Error inesperado con la API';
+          }
+          
+          await github.rest.issues.create({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            title: `Error en la API de Claude - ${new Date().toISOString()}`,
+            body: message + '\n\nPor favor, verifica el estado de la API key y actualiza los secretos si es necesario.'
+          });
+
+  categorize:
+    needs: check-api
+    if: needs.check-api.outputs.api_status == 'ok'
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v2
+
+    - name: Configure AWS Credentials
+      uses: aws-actions/configure-aws-credentials@v1
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
+
+    - name: Setup Python
+      uses: actions/setup-python@v2
+      with:
+        python-version: '3.9'
+
+    - name: Install Dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install anthropic boto3 sqlalchemy psycopg2-binary tenacity
+
+    - name: Create Progress Tracker
+      run: |
+        echo '{"processed_files": []}' > progress.json
+
+    - name: Categorize Content
+      env:
+        BUCKET_NAME: ${{ needs.deploy.outputs.bucket }}
+        DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+      run: |
+        python -c "
+        import boto3
+        import json
+        import os
+        import time
+        from datetime import datetime
+        from app.processor import NormaProcessor
+        from tenacity import retry, stop_after_attempt, wait_exponential
+        
+        def load_progress():
+            try:
+                with open('progress.json', 'r') as f:
+                    return json.load(f)
+            except:
+                return {'processed_files': []}
+        
+        def save_progress(progress):
+            with open('progress.json', 'w') as f:
+                json.dump(progress, f)
+        
+        @retry(stop=stop_after_attempt(int(os.getenv('MAX_RETRIES', 3))),
+              wait=wait_exponential(multiplier=60, min=60, max=300))
+        def process_file_with_retry(processor, content, filename):
+            try:
+                # Reconstruir texto completo
+                full_text = '\n'.join(content['text_content'].values())
+                
+                # Procesar con Claude
+                metadata = processor.extract_metadata(
+                    text=full_text,
+                    filename=filename
+                )
+                
+                return metadata
+            except Exception as e:
+                print(f'Error procesando {filename}: {str(e)}')
+                if 'insufficient_quota' in str(e):
+                    # No reintentar si no hay crédito
+                    raise Exception('API sin crédito') from e
+                raise
+        
+        def process_extracted_content():
+            s3 = boto3.client('s3')
+            processor = NormaProcessor()
+            bucket = os.getenv('BUCKET_NAME')
+            
+            # Cargar progreso
+            progress = load_progress()
+            
+            # Listar todos los JSONs extraídos
+            paginator = s3.get_paginator('list_objects_v2')
+            for page in paginator.paginate(Bucket=bucket, Prefix='extracted/'):
+                for obj in page.get('Contents', []):
+                    if obj['Key'].endswith('.json'):
+                        # Verificar si ya fue procesado
+                        if obj['Key'] in progress['processed_files']:
+                            print(f'Saltando archivo ya procesado: {obj["Key"]}')
+                            continue
+                            
+                        try:
+                            # Obtener contenido JSON
+                            response = s3.get_object(Bucket=bucket, Key=obj['Key'])
+                            content = json.loads(response['Body'].read().decode('utf-8'))
+                            
+                            # Procesar con reintentos
+                            metadata = process_file_with_retry(
+                                processor,
+                                content,
+                                content['filename']
+                            )
+                            
+                            # Guardar en base de datos
+                            processor.save_to_database(metadata)
+                            
+                            # Guardar resultado categorizado en S3
+                            output_key = obj['Key'].replace('extracted/', 'categorized/')
+                            s3.put_object(
+                                Bucket=bucket,
+                                Key=output_key,
+                                Body=json.dumps(metadata, ensure_ascii=False),
+                                ContentType='application/json'
+                            )
+                            
+                            # Actualizar progreso
+                            progress['processed_files'].append(obj['Key'])
+                            save_progress(progress)
+                            
+                            print(f'Procesado exitosamente: {obj["Key"]}')
+                            
+                        except Exception as e:
+                            print(f'Error fatal procesando {obj["Key"]}: {str(e)}')
+                            # Guardar el error en S3
+                            error_key = f'errors/{datetime.now().isoformat()}-{obj["Key"].split("/")[-1]}.error'
+                            s3.put_object(
+                                Bucket=bucket,
+                                Key=error_key,
+                                Body=json.dumps({
+                                    'file': obj['Key'],
+                                    'error': str(e),
+                                    'timestamp': datetime.now().isoformat()
+                                }),
+                                ContentType='application/json'
+                            )
+        
+        if __name__ == '__main__':
+            process_extracted_content()
+        "
+
+    - name: Upload Progress and Logs
+      if: always()
+      run: |
+        # Subir archivo de progreso
+        aws s3 cp progress.json s3://${{ needs.deploy.outputs.bucket }}/status/progress.json
+        # Subir logs
+        aws s3 cp categorization_results.log s3://${{ needs.deploy.outputs.bucket }}/logs/
+      continue-on-error: true
+
+    - name: Check for Errors
+      if: always()
+      run: |
+        python -c "
+        import boto3
+        import os
+        
+        s3 = boto3.client('s3')
+        bucket = os.getenv('BUCKET_NAME')
+        
+        # Verificar si hay archivos de error
+        errors = list(s3.list_objects_v2(Bucket=bucket, Prefix='errors/').get('Contents', []))
+        
+        if errors:
+            print('Se encontraron errores durante el procesamiento:')
+            for error in errors:
+                print(f'- {error["Key"]}')
+            exit(1)
+        "
+      continue-on-error: true 

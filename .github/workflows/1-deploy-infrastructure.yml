@@ -1,18 +1,26 @@
-name: Deploy and Process
+name: 1. Deploy Infrastructure
 
 on:
   push:
     branches: [ main ]
+    paths:
+      - 'terraform/**'
+      - '.github/workflows/1-deploy-infrastructure.yml'
   workflow_dispatch:
 
 env:
   TF_WORKSPACE: prod
   AWS_REGION: us-east-2
-  ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
 
 jobs:
-  deploy-and-process:
+  deploy:
     runs-on: ubuntu-latest
+    outputs:
+      bucket: ${{ steps.tf-outputs.outputs.bucket }}
+      db_host: ${{ steps.tf-outputs.outputs.db_host }}
+      db_port: ${{ steps.tf-outputs.outputs.db_port }}
+      db_name: ${{ steps.tf-outputs.outputs.db_name }}
+      db_user: ${{ steps.tf-outputs.outputs.db_user }}
     
     steps:
     - uses: actions/checkout@v2
@@ -23,17 +31,6 @@ jobs:
         aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         aws-region: ${{ env.AWS_REGION }}
-
-    - name: Setup Python
-      uses: actions/setup-python@v2
-      with:
-        python-version: '3.9'
-
-    - name: Install Dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install -r requirements.txt
-        pip install boto3 anthropic langchain faiss-cpu
 
     - name: Setup Terraform
       uses: hashicorp/setup-terraform@v1
@@ -75,7 +72,7 @@ jobs:
             db_port = '${{ steps.tf-outputs.outputs.db_port }}'
             db_name = '${{ steps.tf-outputs.outputs.db_name }}'
             db_user = '${{ steps.tf-outputs.outputs.db_user }}'
-            db_password = '${{ secrets.DB_PASSWORD }}'
+            db_password = os.getenv('DB_PASSWORD')
         
         processing_config = ProcessingConfig()
         
@@ -108,38 +105,4 @@ jobs:
         PGPASSWORD=${{ secrets.DB_PASSWORD }} psql -h ${{ steps.tf-outputs.outputs.db_host }} \
           -U ${{ steps.tf-outputs.outputs.db_user }} \
           -d ${{ steps.tf-outputs.outputs.db_name }} \
-          -f db/schema.sql
-
-    - name: Process Initial Documents
-      env:
-        BUCKET_NAME: ${{ steps.tf-outputs.outputs.bucket }}
-        DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
-      run: |
-        python -c "
-        import boto3
-        import os
-        from app.processor import NormaProcessor
-        
-        def process_all_documents():
-            s3 = boto3.client('aws')
-            processor = NormaProcessor()
-            
-            # Listar todos los PDFs en el bucket
-            paginator = s3.get_paginator('list_objects_v2')
-            for page in paginator.paginate(Bucket=os.getenv('BUCKET_NAME'), Prefix='raw/'):
-                for obj in page.get('Contents', []):
-                    if obj['Key'].endswith('.pdf'):
-                        processor.process_document(
-                            bucket=os.getenv('BUCKET_NAME'),
-                            key=obj['Key']
-                        )
-        
-        if __name__ == '__main__':
-            process_all_documents()
-        "
-
-    - name: Upload Processing Results
-      if: always()
-      run: |
-        aws s3 cp processing_results.log s3://${{ steps.tf-outputs.outputs.bucket }}/logs/
-      continue-on-error: true 
+          -f db/schema.sql 
