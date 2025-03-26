@@ -49,22 +49,34 @@ jobs:
       if: steps.plan.outcome == 'failure'
       run: exit 1
 
-    - name: Terraform Apply and Get Outputs
-      id: terraform
+    - name: Terraform Apply
+      id: apply
       run: |
         cd terraform
         terraform apply -auto-approve tfplan
-        echo "bucket_name=$(terraform output -raw s3_bucket)" >> "$GITHUB_ENV"
+
+    - name: Get S3 Bucket Name
+      id: get-bucket
+      run: |
+        cd terraform
+        BUCKET_NAME=$(terraform output -raw s3_bucket)
+        echo "::set-output name=bucket::$BUCKET_NAME"
 
     - name: Upload Application to S3
       run: |
-        bucket_name="${{ env.bucket_name }}"
-        if [ -z "$bucket_name" ]; then
+        BUCKET="${{ steps.get-bucket.outputs.bucket }}"
+        if [ -z "$BUCKET" ]; then
           echo "Error: No se pudo obtener el nombre del bucket"
           exit 1
         fi
         
-        echo "Subiendo archivos al bucket: $bucket_name"
-        aws s3 cp app.zip "s3://$bucket_name/app.zip"
-        aws s3 cp scripts/init.sh "s3://$bucket_name/init.sh"
-        aws s3 cp scripts/check_idle.sh "s3://$bucket_name/check_idle.sh" 
+        echo "Subiendo archivos al bucket: $BUCKET"
+        aws s3 cp app.zip "s3://$BUCKET/app.zip"
+        aws s3 cp scripts/init.sh "s3://$BUCKET/init.sh"
+        aws s3 cp scripts/check_idle.sh "s3://$BUCKET/check_idle.sh"
+
+    - name: Verificar Despliegue
+      run: |
+        echo "Infraestructura desplegada correctamente"
+        echo "Bucket S3: ${{ steps.get-bucket.outputs.bucket }}"
+        echo "Región: ${{ env.AWS_REGION }}" 
