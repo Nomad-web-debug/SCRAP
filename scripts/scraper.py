@@ -15,6 +15,8 @@ from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
 from webdriver_manager.chrome import ChromeDriverManager
 from webdriver_manager.core.os_manager import ChromeType
+import glob
+import PyPDF2
 
 # Configurar logging
 logging.basicConfig(level=logging.INFO)
@@ -220,21 +222,276 @@ class NormasActualizadasScraper:
                 logger.error("No se pudo guardar el screenshot")
             return False
 
+    def categorize_document(self, titulo, materia):
+        """Categoriza un documento basado en su título y materia"""
+        categorias = {
+            'CONSTITUCIONAL': {
+                'keywords': ['constitución', 'constitucional', 'derechos fundamentales', 'garantías', 'reforma'],
+                'subcategorias': {
+                    'DERECHOS_FUNDAMENTALES': ['derechos humanos', 'libertades', 'garantías constitucionales', 'dignidad', 'igualdad'],
+                    'PODERES_ESTADO': ['ejecutivo', 'legislativo', 'judicial', 'organismos constitucionales', 'autonomos'],
+                    'REFORMA_CONSTITUCIONAL': ['reforma', 'modificación constitucional', 'enmienda'],
+                    'CONTROL_CONSTITUCIONAL': ['tribunal constitucional', 'inconstitucionalidad', 'precedente vinculante']
+                }
+            },
+            'ADMINISTRATIVO': {
+                'keywords': ['administrativo', 'público', 'estado', 'gestión', 'servicio civil', 'procedimiento'],
+                'subcategorias': {
+                    'PROCEDIMIENTOS': ['procedimiento administrativo', 'tupa', 'silencio administrativo', 'recursos administrativos'],
+                    'FUNCION_PUBLICA': ['servidor público', 'funcionario', 'servicio civil', 'carrera pública', 'servir'],
+                    'CONTRATACIONES': ['contratación', 'adquisición', 'licitación', 'obras públicas', 'proveedores'],
+                    'SISTEMAS_ADMINISTRATIVOS': ['presupuesto', 'tesorería', 'contabilidad', 'control', 'inversión pública'],
+                    'RESPONSABILIDAD_ADMINISTRATIVA': ['sanción', 'procedimiento sancionador', 'faltas administrativas']
+                }
+            },
+            'LABORAL': {
+                'keywords': ['trabajo', 'laboral', 'empleados', 'trabajadores', 'compensación', 'remuneración', 'sindical'],
+                'subcategorias': {
+                    'DERECHOS_LABORALES': ['jornada', 'descanso', 'vacaciones', 'beneficios sociales', 'gratificaciones', 'cts'],
+                    'SEGURIDAD_SOCIAL': ['pensiones', 'seguridad social', 'prestaciones', 'jubilación', 'afp', 'onp', 'essalud'],
+                    'RELACIONES_COLECTIVAS': ['sindicatos', 'negociación colectiva', 'huelga', 'derecho sindical', 'convenios'],
+                    'SEGURIDAD_SALUD': ['seguridad', 'salud ocupacional', 'accidentes trabajo', 'enfermedades profesionales'],
+                    'REGIMENES_ESPECIALES': ['cas', 'servir', 'microempresa', 'régimen', 'trabajadores públicos']
+                }
+            },
+            'TRIBUTARIO_FINANCIERO': {
+                'keywords': ['tributario', 'impuesto', 'fiscal', 'tributo', 'contribución', 'financiero', 'bancario'],
+                'subcategorias': {
+                    'IMPUESTOS': ['renta', 'igv', 'predial', 'alcabala', 'isc', 'tributación municipal'],
+                    'ADUANAS': ['importación', 'exportación', 'aranceles', 'drawback', 'comercio exterior'],
+                    'PROCEDIMIENTOS_TRIBUTARIOS': ['fiscalización', 'cobranza', 'devolución', 'tribunal fiscal', 'sunat'],
+                    'SISTEMA_FINANCIERO': ['bancos', 'seguros', 'afp', 'mercado valores', 'sbs'],
+                    'PREVENCION_LAVADO': ['lavado activos', 'financiamiento terrorismo', 'uif', 'compliance']
+                }
+            },
+            'PENAL': {
+                'keywords': ['penal', 'delito', 'criminal', 'sanción', 'pena', 'procesal penal'],
+                'subcategorias': {
+                    'DELITOS': ['tipos penales', 'corrupción', 'lavado', 'crimen organizado', 'delitos informáticos'],
+                    'PROCESO_PENAL': ['investigación', 'juicio', 'prisión preventiva', 'prueba penal'],
+                    'SISTEMA_PENITENCIARIO': ['cárcel', 'prisión', 'beneficios penitenciarios', 'inpe'],
+                    'JUSTICIA_JUVENIL': ['menores', 'adolescentes infractores', 'medidas socioeducativas'],
+                    'COMPLIANCE_PENAL': ['responsabilidad empresas', 'prevención delitos', 'programas cumplimiento']
+                }
+            },
+            'CIVIL_COMERCIAL': {
+                'keywords': ['civil', 'personas', 'familia', 'contratos', 'obligaciones', 'comercial', 'empresarial'],
+                'subcategorias': {
+                    'PERSONAS_FAMILIA': ['capacidad', 'estado civil', 'matrimonio', 'divorcio', 'filiación', 'alimentos'],
+                    'REALES_REGISTRAL': ['propiedad', 'posesión', 'garantías reales', 'registros públicos'],
+                    'CONTRATOS_OBLIGACIONES': ['contratos', 'obligaciones', 'responsabilidad civil', 'indemnización'],
+                    'SOCIETARIO': ['sociedades', 'empresas', 'accionistas', 'gobierno corporativo'],
+                    'MERCADO_COMPETENCIA': ['protección consumidor', 'competencia desleal', 'libre competencia', 'indecopi']
+                }
+            },
+            'AMBIENTAL_RECURSOS': {
+                'keywords': ['ambiental', 'ambiente', 'ecológico', 'recursos naturales', 'biodiversidad', 'energía'],
+                'subcategorias': {
+                    'RECURSOS_NATURALES': ['agua', 'forestal', 'minería', 'hidrocarburos', 'pesca', 'concesiones'],
+                    'PROTECCION_AMBIENTAL': ['contaminación', 'residuos', 'emisiones', 'calidad ambiental', 'eia'],
+                    'CONSERVACION': ['áreas protegidas', 'especies', 'ecosistemas', 'biodiversidad', 'patrimonio natural'],
+                    'CAMBIO_CLIMATICO': ['clima', 'gases efecto invernadero', 'energía renovable', 'bonos carbono'],
+                    'COMUNIDADES': ['pueblos indígenas', 'consulta previa', 'derechos ancestrales']
+                }
+            },
+            'REGULACION_SECTORIAL': {
+                'keywords': ['regulación', 'sector', 'servicios públicos', 'telecomunicaciones', 'transporte'],
+                'subcategorias': {
+                    'TELECOMUNICACIONES': ['telecomunicaciones', 'internet', 'radiodifusión', 'espectro', 'osiptel'],
+                    'ENERGIA_MINERIA': ['electricidad', 'hidrocarburos', 'minería', 'osinergmin', 'concesiones'],
+                    'TRANSPORTE': ['transporte', 'infraestructura', 'puertos', 'aeropuertos', 'ositran'],
+                    'SANEAMIENTO': ['agua potable', 'saneamiento', 'sunass', 'eps'],
+                    'SALUD': ['salud', 'medicamentos', 'establecimientos salud', 'susalud', 'digemid']
+                }
+            },
+            'PROCESAL_JUSTICIA': {
+                'keywords': ['procesal', 'judicial', 'jurisdiccional', 'arbitraje', 'justicia'],
+                'subcategorias': {
+                    'PROCESO_CIVIL': ['proceso civil', 'medidas cautelares', 'ejecución', 'prueba'],
+                    'PROCESO_CONSTITUCIONAL': ['amparo', 'habeas corpus', 'habeas data', 'cumplimiento'],
+                    'ARBITRAJE_MEDIACION': ['arbitraje', 'conciliación', 'mediación', 'marc'],
+                    'JUSTICIA_DIGITAL': ['expediente digital', 'notificación electrónica', 'firma digital'],
+                    'ORGANIZACION_JUDICIAL': ['poder judicial', 'ministerio público', 'tribunales', 'juzgados']
+                }
+            }
+        }
+
+        texto_completo = f"{titulo.lower()} {materia.lower()}"
+        resultado = {
+            'categorias': [],
+            'subcategorias': [],
+            'keywords_encontradas': [],
+            'relevancia': {}
+        }
+
+        # Buscar categorías principales y calcular relevancia
+        for categoria, info in categorias.items():
+            keywords_encontradas = [kw for kw in info['keywords'] if kw in texto_completo]
+            if keywords_encontradas:
+                resultado['categorias'].append(categoria)
+                resultado['keywords_encontradas'].extend(keywords_encontradas)
+                
+                # Calcular relevancia basada en número de keywords encontradas
+                relevancia = len(keywords_encontradas) / len(info['keywords'])
+                resultado['relevancia'][categoria] = round(relevancia, 2)
+                
+                # Buscar subcategorías
+                for subcategoria, subkeywords in info['subcategorias'].items():
+                    if any(kw in texto_completo for kw in subkeywords):
+                        resultado['subcategorias'].append(subcategoria)
+
+        # Si no se encontró ninguna categoría, asignar OTROS
+        if not resultado['categorias']:
+            resultado['categorias'] = ['OTROS']
+            resultado['subcategorias'] = ['GENERAL']
+            resultado['relevancia'] = {'OTROS': 1.0}
+
+        return resultado
+
     def extract_document_info(self, row):
         """Extrae información de una fila de la tabla"""
         try:
             cells = row.find_elements(By.TAG_NAME, 'td')
             if len(cells) >= 4:
+                titulo = cells[0].text.strip()
+                nro_norma = cells[1].text.strip()
+                materia = cells[2].text.strip()
+                
+                # Obtener texto completo si está disponible
+                texto_completo = None
+                try:
+                    # Intentar obtener el texto completo del PDF
+                    texto_completo = self.extract_pdf_text(row)
+                except Exception as e:
+                    logger.warning(f"No se pudo extraer el texto completo: {str(e)}")
+                
+                # Obtener categorización
+                categorizacion = self.categorize_document(titulo, materia)
+                
+                # Generar ID único basado en tipo de norma y número
+                tipo_norma = self.detect_tipo_norma(titulo)
+                id_norma = self.generate_id(tipo_norma, nro_norma)
+                
+                # Extraer año
+                import re
+                año = None
+                match = re.search(r'\b(19|20)\d{2}\b', nro_norma)
+                if match:
+                    año = int(match.group())
+                
+                # Estructura completa con todos los campos
                 return {
-                    'titulo': cells[0].text.strip(),
-                    'nro_norma': cells[1].text.strip(),
-                    'materia': cells[2].text.strip(),
-                    'fecha_scraping': datetime.now().isoformat()
+                    # Campos de identificación
+                    'id': id_norma,
+                    'titulo': titulo,
+                    'numero': nro_norma,
+                    'materia': materia,
+                    'año': año,
+                    
+                    # Campos de categorización jerárquica
+                    'categoria_principal': categorizacion['categorias'][0] if categorizacion['categorias'] else 'OTROS',
+                    'subcategoria_1': categorizacion['subcategorias'][0] if categorizacion['subcategorias'] else 'GENERAL',
+                    'subcategoria_2': categorizacion['subcategorias'][1] if len(categorizacion['subcategorias']) > 1 else None,
+                    'subcategoria_3': categorizacion['subcategorias'][2] if len(categorizacion['subcategorias']) > 2 else None,
+                    
+                    # Campos de contenido
+                    'texto_completo': texto_completo,  # Contenido completo del documento
+                    'texto_resumen': self.extract_resumen(titulo, materia),
+                    'palabras_clave': categorizacion['keywords_encontradas'],
+                    
+                    # Campos de origen y fuente
+                    'tipo_norma': tipo_norma,
+                    'origen': 'El Peruano - Normas Actualizadas',
+                    'url_origen': self.driver.current_url,
+                    'nombre_archivo': f"{tipo_norma}_{nro_norma.replace('/', '_')}.pdf" if tipo_norma and nro_norma else None,
+                    
+                    # Campos de metadata adicional
+                    'fecha_scraping': datetime.now().strftime('%Y-%m-%d'),
+                    'relevancia_categorias': categorizacion['relevancia'],
+                    
+                    # Campo de texto enriquecido para IA
+                    'texto_contexto': self.generate_texto_contexto(titulo, tipo_norma, año, materia, categorizacion)
                 }
             return None
         except Exception as e:
             logger.error(f"Error extrayendo información: {str(e)}")
             return None
+
+    def extract_pdf_text(self, row):
+        """Extrae el texto completo del PDF"""
+        try:
+            # Primero intentamos descargar el PDF
+            if not self.click_download(row):
+                return None
+            
+            # Esperar a que se complete la descarga
+            time.sleep(3)
+            
+            # Buscar el archivo PDF más reciente en la carpeta de descargas
+            downloads_path = os.path.expanduser("~/Downloads")
+            list_of_files = glob.glob(os.path.join(downloads_path, '*.pdf'))
+            if not list_of_files:
+                return None
+                
+            latest_file = max(list_of_files, key=os.path.getctime)
+            
+            # Extraer texto del PDF
+            with open(latest_file, 'rb') as file:
+                reader = PyPDF2.PdfReader(file)
+                text = ""
+                for page in reader.pages:
+                    text += page.extract_text()
+            
+            # Limpiar el texto
+            text = text.strip()
+            
+            # Eliminar el archivo temporal
+            os.remove(latest_file)
+            
+            return text
+            
+        except Exception as e:
+            logger.error(f"Error extrayendo texto del PDF: {str(e)}")
+            return None
+
+    def detect_tipo_norma(self, titulo):
+        """Detecta el tipo de norma basado en el título"""
+        tipos = {
+            'LEY': r'\bLEY\b',
+            'DECRETO_SUPREMO': r'\bDECRETO\s+SUPREMO\b',
+            'DECRETO_LEGISLATIVO': r'\bDECRETO\s+LEGISLATIVO\b',
+            'RESOLUCION': r'\bRESOLUCIÓN\b|\bRESOLUCION\b',
+            'DIRECTIVA': r'\bDIRECTIVA\b',
+            'REGLAMENTO': r'\bREGLAMENTO\b'
+        }
+        
+        for tipo, patron in tipos.items():
+            if re.search(patron, titulo.upper()):
+                return tipo
+        return 'OTROS'
+
+    def generate_id(self, tipo_norma, nro_norma):
+        """Genera un ID único para la norma"""
+        # Limpiar número de norma
+        nro_limpio = re.sub(r'[^\w]', '', nro_norma) if nro_norma else ''
+        # Generar ID único
+        return f"{tipo_norma}_{nro_limpio}_{datetime.now().strftime('%Y%m')}"
+
+    def extract_resumen(self, titulo, materia):
+        """Extrae un resumen basado en título y materia"""
+        return f"{titulo}. {materia}".strip()
+
+    def generate_texto_contexto(self, titulo, tipo_norma, año, materia, categorizacion):
+        """Genera texto contextual enriquecido para IA"""
+        return f"""
+            Título: {titulo}
+            Tipo de Norma: {tipo_norma if tipo_norma else 'No especificado'}
+            Año: {año if año else 'No especificado'}
+            Materia: {materia}
+            Categorías Principales: {', '.join(categorizacion['categorias'])}
+            Subcategorías: {', '.join(categorizacion['subcategorias'])}
+            Palabras Clave: {', '.join(categorizacion['keywords_encontradas'])}
+        """.strip()
 
     def click_download(self, row):
         """Hace clic en el botón de descarga y espera a que se complete"""
@@ -315,13 +572,15 @@ class NormasActualizadasScraper:
             return False
 
     def save_to_s3(self, data, key_prefix):
-        """Guarda datos en S3"""
+        """Guarda datos en S3 manteniendo la estructura completa para IA"""
         try:
             key = f"{key_prefix}/{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+            
+            # Guardar en formato JSON legible para facilitar el uso con IA
             self.s3_client.put_object(
                 Bucket=self.bucket_name,
                 Key=key,
-                Body=json.dumps(data, ensure_ascii=False),
+                Body=json.dumps(data, ensure_ascii=False, indent=2),
                 ContentType='application/json'
             )
             logger.info(f"Datos guardados en {key}")
@@ -345,18 +604,18 @@ class NormasActualizadasScraper:
                 self.driver.get(self.backup_url)
                 if not self.wait_for_results():
                     logger.error("No se pudieron cargar los resultados en ninguna URL")
-                    return False
+                    return 0
             
             # Obtener el HTML actual para diagnóstico
             page_source = self.driver.page_source
             logger.info(f"Longitud del HTML: {len(page_source)}")
             
             documents = []
-            rows = self.driver.find_elements(By.CSS_SELECTOR, "table tr")[1:]  # Ignorar encabezado
+            rows = self.driver.find_elements(By.CSS_SELECTOR, "table tr")[1:]
             
             if not rows:
                 logger.error("No se encontraron filas en la tabla")
-                return False
+                return 0
                 
             logger.info(f"Procesando {len(rows)} filas...")
             
@@ -366,35 +625,55 @@ class NormasActualizadasScraper:
                     documents.append(doc_info)
                     logger.info(f"Documento {idx} procesado: {doc_info['titulo'][:50]}...")
                     
-                    # Intentar descargar el PDF
                     if self.click_download(row):
                         logger.info(f"Descarga iniciada para documento {idx}")
                     
-                    # Esperar entre descargas
                     time.sleep(2)
 
-            # Guardar metadata
+            # Guardar metadata con estructura completa
+            total_docs = len(documents)
             if documents:
-                self.save_to_s3({
+                metadata = {
                     'documentos': documents,
-                    'total': len(documents),
-                    'fecha_scraping': datetime.now().isoformat(),
-                    'url_origen': self.driver.current_url
-                }, 'metadata')
-                logger.info(f"Metadata guardada para {len(documents)} documentos")
+                    'total': total_docs,
+                    'fecha_scraping': datetime.now().strftime('%Y-%m-%d'),
+                    'url_origen': self.driver.current_url,
+                    'estadisticas': {
+                        'categorias_encontradas': list(set([cat for doc in documents for cat in doc['categorias']])),
+                        'subcategorias_encontradas': list(set([sub for doc in documents for sub in doc['subcategorias']])),
+                        'distribucion_años': {},
+                        'distribucion_tipos': {}
+                    }
+                }
+                
+                # Calcular distribución de años y tipos
+                for doc in documents:
+                    if doc['año']:
+                        metadata['estadisticas']['distribucion_años'][str(doc['año'])] = \
+                            metadata['estadisticas']['distribucion_años'].get(str(doc['año']), 0) + 1
+                    if doc['tipo_norma']:
+                        metadata['estadisticas']['distribucion_tipos'][doc['tipo_norma']] = \
+                            metadata['estadisticas']['distribucion_tipos'].get(doc['tipo_norma'], 0) + 1
+                
+                self.save_to_s3(metadata, 'metadata')
+                logger.info(f"Metadata guardada para {total_docs} documentos")
             else:
                 logger.error("No se encontraron documentos para procesar")
-                return False
+                return 0
                 
-            logger.info(f"Scraping completado. {len(documents)} documentos procesados")
-            return True
+            logger.info(f"Scraping completado. {total_docs} documentos procesados")
+            return total_docs
             
         except Exception as e:
             logger.error(f"Error en el proceso de scraping: {str(e)}")
-            return False
+            return 0
         finally:
             self.driver.quit()
 
 if __name__ == '__main__':
     scraper = NormasActualizadasScraper()
-    scraper.scrape() 
+    total = scraper.scrape()
+    print(f"Total de documentos procesados: {total}")
+    if total == 0:
+        exit(1)  # Salir con error si no se procesaron documentos
+    exit(0)  # Salir exitosamente si se procesaron documentos 
