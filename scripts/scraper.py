@@ -18,6 +18,10 @@ from webdriver_manager.core.os_manager import ChromeType
 import glob
 import PyPDF2
 import re  # Agregando importación de re
+from dotenv import load_dotenv
+
+# Cargar variables de entorno desde .env
+load_dotenv()
 
 # Configurar logging
 logging.basicConfig(level=logging.INFO)
@@ -27,8 +31,33 @@ class NormasActualizadasScraper:
     def __init__(self):
         self.base_url = "https://spij.minjus.gob.pe/normas/normasactualizadas"
         self.backup_url = "https://diariooficial.elperuano.pe/Normas/normasactualizadas"
-        self.s3_client = boto3.client('s3')
-        self.bucket_name = os.getenv('BUCKET_NAME')
+        
+        # Configuración de AWS
+        try:
+            self.bucket_name = os.getenv('BUCKET_NAME')
+            aws_access_key = os.getenv('AWS_ACCESS_KEY_ID')
+            aws_secret_key = os.getenv('AWS_SECRET_ACCESS_KEY')
+            aws_region = os.getenv('AWS_DEFAULT_REGION', 'us-east-1')
+            
+            if not all([self.bucket_name, aws_access_key, aws_secret_key]):
+                raise ValueError("Faltan variables de entorno de AWS")
+            
+            # Inicializar cliente de S3 con credenciales explícitas
+            self.s3_client = boto3.client(
+                's3',
+                aws_access_key_id=aws_access_key,
+                aws_secret_access_key=aws_secret_key,
+                region_name=aws_region
+            )
+            
+            # Verificar acceso al bucket
+            self.s3_client.head_bucket(Bucket=self.bucket_name)
+            logger.info(f"Conexión exitosa al bucket de S3: {self.bucket_name}")
+                
+        except Exception as e:
+            logger.error(f"Error configurando AWS: {str(e)}")
+            raise
+            
         self.setup_driver()
 
     def setup_driver(self):
@@ -598,16 +627,14 @@ class NormasActualizadasScraper:
             logger.info(f"Datos guardados en S3: {key}")
             logger.info(f"Enlace de descarga (válido por 7 días): {url}")
             
-            # Guardar el enlace en un archivo local para referencia
-            with open('ultimo_enlace.txt', 'w') as f:
-                f.write(f"Último enlace de descarga: {url}\n")
-                f.write(f"Fecha generación: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
-                f.write(f"Válido hasta: {(datetime.now() + timedelta(days=7)).strftime('%Y-%m-%d %H:%M:%S')}\n")
+            # Guardar el enlace en un archivo de log
+            logger.info(f"Para acceder a los datos, use este enlace hasta {(datetime.now() + timedelta(days=7)).strftime('%Y-%m-%d %H:%M:%S')}")
             
             return True
+                
         except Exception as e:
             logger.error(f"Error guardando en S3: {str(e)}")
-            return False
+            raise  # Propagar el error para manejarlo en el nivel superior
 
     def scrape(self):
         """Proceso principal de scraping"""
