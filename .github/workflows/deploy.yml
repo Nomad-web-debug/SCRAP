@@ -54,17 +54,21 @@ jobs:
       id: bucket
       working-directory: ./terraform
       run: |
-        echo "Esperando que el estado se actualice..."
-        sleep 5
+        echo "Obteniendo nombre del bucket..."
+        # Ejecutar el comando y capturar la salida
+        BUCKET=$(terraform output -raw s3_bucket || echo "")
         
-        BUCKET=$(terraform output -raw s3_bucket)
+        # Verificar si se obtuvo el nombre del bucket
         if [ -z "$BUCKET" ]; then
           echo "Error: No se pudo obtener el nombre del bucket"
+          terraform output
           exit 1
         fi
-        echo "BUCKET_NAME=${BUCKET}" >> $GITHUB_ENV
-        echo "bucket=${BUCKET}" >> $GITHUB_OUTPUT
-        echo "Bucket configurado: $BUCKET"
+        
+        # Guardar el nombre del bucket como variable de entorno y output
+        echo "BUCKET_NAME=$BUCKET" >> $GITHUB_ENV
+        echo "bucket=$BUCKET" >> $GITHUB_OUTPUT
+        echo "Nombre del bucket obtenido: $BUCKET"
 
     - name: Verificar API de Claude
       run: |
@@ -241,6 +245,13 @@ jobs:
       env:
         BUCKET_NAME: ${{ steps.bucket.outputs.bucket }}
       run: |
+        if [ -z "$BUCKET_NAME" ]; then
+          echo "Error: BUCKET_NAME no está definido"
+          exit 1
+        fi
+        
+        echo "Verificando bucket: $BUCKET_NAME"
+        
         python -c "
         import boto3
         import os
@@ -248,6 +259,7 @@ jobs:
         def check_errors():
             s3 = boto3.client('s3')
             bucket = os.getenv('BUCKET_NAME')
+            print(f'Verificando bucket: {bucket}')
             
             try:
                 # Verificar archivos de error
@@ -255,7 +267,7 @@ jobs:
                 if 'Contents' in response:
                     print('Se encontraron errores:')
                     for error in response['Contents']:
-                        print(f'- {error["Key"]}')
+                        print(f'- {error[\"Key\"]}')
                     return False
                     
                 # Verificar archivos procesados
