@@ -17,6 +17,7 @@ from webdriver_manager.chrome import ChromeDriverManager
 from webdriver_manager.core.os_manager import ChromeType
 import glob
 import PyPDF2
+import re  # Agregando importación de re
 
 # Configurar logging
 logging.basicConfig(level=logging.INFO)
@@ -373,7 +374,6 @@ class NormasActualizadasScraper:
                 id_norma = self.generate_id(tipo_norma, nro_norma)
                 
                 # Extraer año
-                import re
                 año = None
                 match = re.search(r'\b(19|20)\d{2}\b', nro_norma)
                 if match:
