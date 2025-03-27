@@ -633,14 +633,27 @@ class NormasActualizadasScraper:
             # Guardar metadata con estructura completa
             total_docs = len(documents)
             if documents:
+                # Recolectar todas las categorías y subcategorías
+                todas_categorias = []
+                todas_subcategorias = []
+                for doc in documents:
+                    if doc['categoria_principal'] != 'OTROS':
+                        todas_categorias.append(doc['categoria_principal'])
+                    if doc['subcategoria_1'] != 'GENERAL':
+                        todas_subcategorias.append(doc['subcategoria_1'])
+                    if doc['subcategoria_2']:
+                        todas_subcategorias.append(doc['subcategoria_2'])
+                    if doc['subcategoria_3']:
+                        todas_subcategorias.append(doc['subcategoria_3'])
+
                 metadata = {
                     'documentos': documents,
                     'total': total_docs,
                     'fecha_scraping': datetime.now().strftime('%Y-%m-%d'),
                     'url_origen': self.driver.current_url,
                     'estadisticas': {
-                        'categorias_encontradas': list(set([cat for doc in documents for cat in doc['categorias']])),
-                        'subcategorias_encontradas': list(set([sub for doc in documents for sub in doc['subcategorias']])),
+                        'categorias_encontradas': list(set(todas_categorias)),
+                        'subcategorias_encontradas': list(set(todas_subcategorias)),
                         'distribucion_años': {},
                         'distribucion_tipos': {}
                     }
@@ -657,13 +670,11 @@ class NormasActualizadasScraper:
                 
                 self.save_to_s3(metadata, 'metadata')
                 logger.info(f"Metadata guardada para {total_docs} documentos")
+                return total_docs
             else:
                 logger.error("No se encontraron documentos para procesar")
                 return 0
                 
-            logger.info(f"Scraping completado. {total_docs} documentos procesados")
-            return total_docs
-            
         except Exception as e:
             logger.error(f"Error en el proceso de scraping: {str(e)}")
             return 0
