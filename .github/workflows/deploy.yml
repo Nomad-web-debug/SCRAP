@@ -54,12 +54,8 @@ jobs:
       id: bucket
       working-directory: ./terraform
       run: |
-        # Asegurarnos que estamos en el directorio correcto
-        pwd
-        ls -la
-        
-        # Intentar obtener el output directamente
-        BUCKET_NAME=$(terraform output -raw s3_bucket || echo "")
+        # Ejecutar terraform output y capturar el resultado
+        BUCKET_NAME=$(terraform show -json tfplan | jq -r '.planned_values.outputs.s3_bucket.value')
         echo "Valor inicial del bucket: $BUCKET_NAME"
         
         # Verificar si se obtuvo el nombre
@@ -75,13 +71,15 @@ jobs:
           exit 1
         fi
         
-        # Guardar el nombre del bucket como output del paso
+        # Guardar el nombre del bucket como output del paso y como variable de entorno
+        echo "BUCKET_NAME=$BUCKET_NAME" >> $GITHUB_ENV
         echo "bucket=$BUCKET_NAME" >> $GITHUB_OUTPUT
         echo "Nombre del bucket obtenido y validado: $BUCKET_NAME"
 
     - name: Verificar API de Claude
+      if: success()
       env:
-        BUCKET_NAME: ${{ steps.bucket.outputs.bucket }}
+        BUCKET_NAME: ${{ env.BUCKET_NAME }}
       run: |
         if [ -z "$BUCKET_NAME" ]; then
           echo "Error: BUCKET_NAME no está definido"
