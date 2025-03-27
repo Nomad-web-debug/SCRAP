@@ -54,8 +54,8 @@ jobs:
       id: bucket
       working-directory: ./terraform
       run: |
-        # Ejecutar terraform output y capturar el resultado
-        BUCKET_NAME=$(terraform show -json tfplan | jq -r '.planned_values.outputs.s3_bucket.value')
+        # Obtener el nombre del bucket directamente del output
+        BUCKET_NAME=$(terraform output -raw s3_bucket)
         echo "Valor inicial del bucket: $BUCKET_NAME"
         
         # Verificar si se obtuvo el nombre
@@ -65,16 +65,10 @@ jobs:
           exit 1
         fi
         
-        # Validar el formato del nombre del bucket
-        if [[ ! $BUCKET_NAME =~ ^[a-zA-Z0-9.\-_]{1,255}$ ]]; then
-          echo "Error: El nombre del bucket no tiene un formato válido: $BUCKET_NAME"
-          exit 1
-        fi
-        
-        # Guardar el nombre del bucket como output del paso y como variable de entorno
+        # Guardar el nombre del bucket como variable de entorno y output
         echo "BUCKET_NAME=$BUCKET_NAME" >> $GITHUB_ENV
         echo "bucket=$BUCKET_NAME" >> $GITHUB_OUTPUT
-        echo "Nombre del bucket obtenido y validado: $BUCKET_NAME"
+        echo "Nombre del bucket obtenido: $BUCKET_NAME"
 
     - name: Verificar API de Claude
       if: success()
@@ -108,8 +102,9 @@ jobs:
         "
 
     - name: Procesar PDFs
+      if: success()
       env:
-        BUCKET_NAME: ${{ steps.bucket.outputs.bucket }}
+        BUCKET_NAME: ${{ env.BUCKET_NAME }}
       run: |
         if [ -z "$BUCKET_NAME" ]; then
           echo "Error: BUCKET_NAME no está definido"
@@ -180,9 +175,16 @@ jobs:
         "
 
     - name: Categorizar Contenido
+      if: success()
       env:
-        BUCKET_NAME: ${{ steps.bucket.outputs.bucket }}
+        BUCKET_NAME: ${{ env.BUCKET_NAME }}
       run: |
+        if [ -z "$BUCKET_NAME" ]; then
+          echo "Error: BUCKET_NAME no está definido"
+          exit 1
+        fi
+        
+        echo "Usando bucket: $BUCKET_NAME"
         python -c "
         import anthropic
         import boto3
@@ -262,7 +264,7 @@ jobs:
     - name: Verificar Errores
       if: always()
       env:
-        BUCKET_NAME: ${{ steps.bucket.outputs.bucket }}
+        BUCKET_NAME: ${{ env.BUCKET_NAME }}
       run: |
         if [ -z "$BUCKET_NAME" ]; then
           echo "Error: BUCKET_NAME no está definido"
