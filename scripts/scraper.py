@@ -12,6 +12,9 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.chrome.service import Service
+from webdriver_manager.chrome import ChromeDriverManager
+from webdriver_manager.core.os_manager import ChromeType
 
 # Configurar logging
 logging.basicConfig(level=logging.INFO)
@@ -27,12 +30,41 @@ class NormasActualizadasScraper:
 
     def setup_driver(self):
         """Configura el driver de Selenium"""
-        chrome_options = Options()
-        chrome_options.add_argument('--headless')
-        chrome_options.add_argument('--no-sandbox')
-        chrome_options.add_argument('--disable-dev-shm-usage')
-        self.driver = webdriver.Chrome(options=chrome_options)
-        self.wait = WebDriverWait(self.driver, 20)
+        try:
+            # Verificar que Chromium está instalado
+            import shutil
+            chromium_path = shutil.which('chromium')
+            if not chromium_path:
+                chromium_path = shutil.which('chromium-browser')
+            
+            if not chromium_path:
+                raise Exception("No se encontró el binario de Chromium")
+            
+            logger.info(f"Usando Chromium en: {chromium_path}")
+            
+            chrome_options = Options()
+            chrome_options.add_argument('--headless')
+            chrome_options.add_argument('--no-sandbox')
+            chrome_options.add_argument('--disable-dev-shm-usage')
+            chrome_options.binary_location = chromium_path
+            
+            # Configurar el servicio de ChromeDriver
+            service = Service(
+                ChromeDriverManager(
+                    chrome_type=ChromeType.CHROMIUM
+                ).install()
+            )
+            
+            self.driver = webdriver.Chrome(
+                service=service,
+                options=chrome_options
+            )
+            self.wait = WebDriverWait(self.driver, 20)
+            logger.info("Driver de Selenium configurado correctamente")
+            
+        except Exception as e:
+            logger.error(f"Error configurando el driver: {str(e)}")
+            raise
 
     def wait_for_results(self):
         """Espera a que los resultados se carguen usando Selenium"""

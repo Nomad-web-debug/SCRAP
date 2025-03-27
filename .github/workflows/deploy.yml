@@ -123,9 +123,17 @@ jobs:
       run: |
         echo "Iniciando scraping..."
         
-        # Instalar dependencias adicionales para Selenium
+        # Instalar Chromium y ChromeDriver
         sudo apt-get update
-        sudo apt-get install -y chromium-browser chromium-chromedriver
+        sudo apt-get install -y chromium chromium-driver
+        
+        # Verificar instalación
+        which chromium
+        which chromedriver
+        chromium --version
+        chromedriver --version
+        
+        # Instalar dependencias de Python
         pip install selenium webdriver_manager
         
         # Ejecutar scraping
