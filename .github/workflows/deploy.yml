@@ -55,25 +55,21 @@ jobs:
       id: bucket
       working-directory: ./terraform
       run: |
-        # Obtener el nombre del bucket y guardarlo en un archivo temporal
-        terraform output s3_bucket > bucket_name.txt
-        
-        # Leer el archivo y limpiar espacios en blanco
-        BUCKET_NAME=$(cat bucket_name.txt | tr -d '"' | tr -d ' ')
-        rm bucket_name.txt
+        # Ejecutar terraform output directamente
+        BUCKET_NAME=$(terraform output -raw s3_bucket)
+        echo "Valor inicial del bucket: $BUCKET_NAME"
         
         # Verificar si se obtuvo el nombre
         if [ -z "$BUCKET_NAME" ]; then
           echo "Error: No se pudo obtener el nombre del bucket"
-          terraform output
           exit 1
         fi
         
-        # Imprimir para debug
-        echo "Nombre del bucket obtenido: $BUCKET_NAME"
-        
         # Guardar en variables de entorno y outputs
-        echo "BUCKET_NAME=$BUCKET_NAME" >> "$GITHUB_ENV"
+        {
+          echo "BUCKET_NAME=$BUCKET_NAME"
+          echo "bucket=$BUCKET_NAME"
+        } >> "$GITHUB_ENV"
         echo "bucket=$BUCKET_NAME" >> "$GITHUB_OUTPUT"
 
     - name: Verificar API de Claude
