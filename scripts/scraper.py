@@ -4,7 +4,7 @@ import time
 import boto3
 import requests
 from bs4 import BeautifulSoup
-from datetime import datetime
+from datetime import datetime, timedelta
 from urllib.parse import urljoin
 import logging
 from selenium import webdriver
@@ -572,18 +572,38 @@ class NormasActualizadasScraper:
             return False
 
     def save_to_s3(self, data, key_prefix):
-        """Guarda datos en S3 manteniendo la estructura completa para IA"""
+        """Guarda datos en S3 y genera un enlace público temporal"""
         try:
+            # Generar nombre del archivo con timestamp
             key = f"{key_prefix}/{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
             
-            # Guardar en formato JSON legible para facilitar el uso con IA
+            # Guardar en formato JSON legible
             self.s3_client.put_object(
                 Bucket=self.bucket_name,
                 Key=key,
                 Body=json.dumps(data, ensure_ascii=False, indent=2),
                 ContentType='application/json'
             )
-            logger.info(f"Datos guardados en {key}")
+            
+            # Generar URL firmada para descarga (válida por 7 días)
+            url = self.s3_client.generate_presigned_url(
+                'get_object',
+                Params={
+                    'Bucket': self.bucket_name,
+                    'Key': key
+                },
+                ExpiresIn=7*24*3600  # 7 días en segundos
+            )
+            
+            logger.info(f"Datos guardados en S3: {key}")
+            logger.info(f"Enlace de descarga (válido por 7 días): {url}")
+            
+            # Guardar el enlace en un archivo local para referencia
+            with open('ultimo_enlace.txt', 'w') as f:
+                f.write(f"Último enlace de descarga: {url}\n")
+                f.write(f"Fecha generación: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+                f.write(f"Válido hasta: {(datetime.now() + timedelta(days=7)).strftime('%Y-%m-%d %H:%M:%S')}\n")
+            
             return True
         except Exception as e:
             logger.error(f"Error guardando en S3: {str(e)}")
@@ -682,9 +702,13 @@ class NormasActualizadasScraper:
             self.driver.quit()
 
 if __name__ == '__main__':
-    scraper = NormasActualizadasScraper()
-    total = scraper.scrape()
-    print(f"Total de documentos procesados: {total}")
-    if total == 0:
-        exit(1)  # Salir con error si no se procesaron documentos
-    exit(0)  # Salir exitosamente si se procesaron documentos 
+    try:
+        scraper = NormasActualizadasScraper()
+        total_docs = scraper.scrape()
+        print(f"Total de documentos procesados: {total_docs}")
+        if total_docs == 0:
+            exit(1)  # Salir con error si no se procesaron documentos
+        exit(0)  # Salir exitosamente si se procesaron documentos
+    except Exception as e:
+        logger.error(f"Error en la ejecución principal: {str(e)}")
+        exit(1) 
