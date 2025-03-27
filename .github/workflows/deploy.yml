@@ -31,6 +31,11 @@ jobs:
 
     - name: Instalar Dependencias
       run: |
+        # Instalar jq para procesar JSON
+        sudo apt-get update
+        sudo apt-get install -y jq
+        
+        # Instalar dependencias de Python
         python -m pip install --upgrade pip
         pip install -r requirements.txt
         pip install anthropic boto3 sqlalchemy psycopg2-binary tenacity PyPDF2
@@ -54,21 +59,21 @@ jobs:
       id: bucket
       working-directory: ./terraform
       run: |
-        # Obtener el nombre del bucket directamente del output
-        BUCKET_NAME=$(terraform output -raw s3_bucket)
-        echo "Valor inicial del bucket: $BUCKET_NAME"
+        # Ejecutar terraform output y limpiar la salida
+        BUCKET_NAME=$(terraform output -json | jq -r '.s3_bucket.value')
         
         # Verificar si se obtuvo el nombre
-        if [ -z "$BUCKET_NAME" ]; then
+        if [ -z "$BUCKET_NAME" ] || [ "$BUCKET_NAME" = "null" ]; then
           echo "Error: No se pudo obtener el nombre del bucket"
-          terraform output
           exit 1
         fi
         
-        # Guardar el nombre del bucket como variable de entorno y output
-        echo "BUCKET_NAME=$BUCKET_NAME" >> $GITHUB_ENV
-        echo "bucket=$BUCKET_NAME" >> $GITHUB_OUTPUT
+        # Imprimir para debug
         echo "Nombre del bucket obtenido: $BUCKET_NAME"
+        
+        # Guardar en variables de entorno y outputs
+        echo "bucket=$BUCKET_NAME" >> "$GITHUB_OUTPUT"
+        echo "BUCKET_NAME=$BUCKET_NAME" >> "$GITHUB_ENV"
 
     - name: Verificar API de Claude
       if: success()
