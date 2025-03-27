@@ -52,6 +52,11 @@ class NormasActualizadasScraper:
             chrome_options.add_argument('--remote-debugging-port=9222')  # Puerto para DevTools
             chrome_options.add_argument('--disable-extensions')
             chrome_options.add_argument('--disable-software-rasterizer')
+            chrome_options.add_argument('--window-size=1920,1080')  # Tamaño de ventana fijo
+            chrome_options.add_argument('--start-maximized')
+            chrome_options.add_argument('--disable-blink-features=AutomationControlled')
+            chrome_options.add_argument('--disable-web-security')
+            chrome_options.add_argument('--allow-running-insecure-content')
             chrome_options.binary_location = chromium_path
             
             # Configurar el servicio de ChromeDriver
@@ -61,8 +66,7 @@ class NormasActualizadasScraper:
             
             service = Service(
                 ChromeDriverManager(
-                    chrome_type=ChromeType.CHROMIUM,
-                    version="latest"
+                    chrome_type=ChromeType.CHROMIUM
                 ).install()
             )
             
