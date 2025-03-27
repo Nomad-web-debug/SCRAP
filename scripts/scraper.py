@@ -94,13 +94,45 @@ class NormasActualizadasScraper:
         """Espera a que los resultados se carguen usando Selenium"""
         try:
             logger.info("Esperando a que la página cargue...")
+            
             # Esperar a que el DOM esté completamente cargado
             self.wait.until(
                 EC.presence_of_element_located((By.TAG_NAME, "body"))
             )
             
+            # Esperar a que no haya más solicitudes AJAX pendientes
+            self.driver.execute_script("""
+                window.ajaxComplete = false;
+                var oldSend = XMLHttpRequest.prototype.send;
+                XMLHttpRequest.prototype.send = function() {
+                    window.ajaxComplete = false;
+                    oldSend.apply(this, arguments);
+                    this.addEventListener('loadend', function() {
+                        window.ajaxComplete = true;
+                    });
+                };
+            """)
+            
             # Dar tiempo adicional para que la página se renderice completamente
-            time.sleep(5)
+            time.sleep(10)  # Aumentar el tiempo de espera
+            
+            # Esperar a que termine cualquier animación
+            self.driver.execute_script("""
+                var lastHeight = document.body.scrollHeight;
+                var checkCount = 0;
+                var interval = setInterval(function() {
+                    var currentHeight = document.body.scrollHeight;
+                    if (currentHeight === lastHeight || checkCount > 10) {
+                        clearInterval(interval);
+                        window.heightStabilized = true;
+                    }
+                    lastHeight = currentHeight;
+                    checkCount++;
+                }, 500);
+            """)
+            
+            # Esperar a que la altura se estabilice
+            self.wait.until(lambda d: d.execute_script("return window.heightStabilized === true"))
             
             logger.info("Buscando checkbox 'Ver Títulos'...")
             # Intentar diferentes selectores para el checkbox
@@ -207,10 +239,77 @@ class NormasActualizadasScraper:
     def click_download(self, row):
         """Hace clic en el botón de descarga y espera a que se complete"""
         try:
-            download_button = row.find_element(By.CSS_SELECTOR, '.descargar')
-            download_button.click()
-            time.sleep(2)  # Dar tiempo para que inicie la descarga
-            return True
+            # Lista de selectores específicos para los botones de la página
+            download_selectors = [
+                'input[type="button"][value="Descargar"]',
+                'input.btn-primary[value="Descargar"]',
+                '.btn-primary[value="Descargar"]',
+                '//input[@type="button" and @value="Descargar"]',
+                '//input[@class="btn-primary" and @value="Descargar"]'
+            ]
+            
+            # Intentar cada selector
+            for selector in download_selectors:
+                try:
+                    if selector.startswith('//'):
+                        download_button = row.find_element(By.XPATH, selector)
+                    else:
+                        download_button = row.find_element(By.CSS_SELECTOR, selector)
+                        
+                    if download_button and download_button.is_displayed():
+                        # Intentar hacer scroll al botón
+                        self.driver.execute_script("arguments[0].scrollIntoView(true);", download_button)
+                        time.sleep(1)  # Esperar a que termine el scroll
+                        
+                        # Intentar click con JavaScript si el click normal falla
+                        try:
+                            download_button.click()
+                        except:
+                            self.driver.execute_script("arguments[0].click();", download_button)
+                            
+                        logger.info(f"Botón de descarga encontrado usando selector: {selector}")
+                        time.sleep(2)  # Esperar a que inicie la descarga
+                        return True
+                except:
+                    continue
+            
+            # Si no funcionó con los selectores anteriores, intentar buscar por el texto del botón
+            try:
+                buttons = row.find_elements(By.TAG_NAME, "input")
+                for button in buttons:
+                    if button.get_attribute("value") == "Descargar":
+                        self.driver.execute_script("arguments[0].scrollIntoView(true);", button)
+                        time.sleep(1)
+                        try:
+                            button.click()
+                        except:
+                            self.driver.execute_script("arguments[0].click();", button)
+                        logger.info("Botón de descarga encontrado por texto")
+                        time.sleep(2)
+                        return True
+            except:
+                pass
+                    
+            # Si llegamos aquí, no se encontró el botón
+            logger.error("No se pudo encontrar el botón de descarga")
+            
+            # Tomar screenshot y HTML para diagnóstico
+            try:
+                timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+                screenshot_path = f"/tmp/error_download_{timestamp}.png"
+                html_path = f"/tmp/error_download_{timestamp}.html"
+                
+                self.driver.save_screenshot(screenshot_path)
+                with open(html_path, 'w', encoding='utf-8') as f:
+                    f.write(row.get_attribute('outerHTML'))
+                    
+                logger.info(f"Screenshot guardado en: {screenshot_path}")
+                logger.info(f"HTML guardado en: {html_path}")
+            except:
+                logger.error("No se pudo guardar el diagnóstico")
+                
+            return False
+            
         except Exception as e:
             logger.error(f"Error haciendo clic en descarga: {str(e)}")
             return False
