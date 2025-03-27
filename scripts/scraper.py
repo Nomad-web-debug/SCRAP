@@ -93,21 +93,99 @@ class NormasActualizadasScraper:
     def wait_for_results(self):
         """Espera a que los resultados se carguen usando Selenium"""
         try:
-            # Marcar checkbox de "Ver Títulos"
-            ver_titulos = self.wait.until(
-                EC.presence_of_element_located((By.CSS_SELECTOR, "input[type='checkbox']"))
-            )
-            if not ver_titulos.is_selected():
-                ver_titulos.click()
-                time.sleep(2)  # Esperar a que se actualice la vista
-
-            # Esperar a que la tabla se cargue
+            logger.info("Esperando a que la página cargue...")
+            # Esperar a que el DOM esté completamente cargado
             self.wait.until(
-                EC.presence_of_all_elements_located((By.CSS_SELECTOR, "table tr"))
+                EC.presence_of_element_located((By.TAG_NAME, "body"))
             )
-            return True
+            
+            # Dar tiempo adicional para que la página se renderice completamente
+            time.sleep(5)
+            
+            logger.info("Buscando checkbox 'Ver Títulos'...")
+            # Intentar diferentes selectores para el checkbox
+            checkbox_selectors = [
+                "input[type='checkbox']",
+                "#chkVerTitulos",
+                "input[name='verTitulos']",
+                "//input[@type='checkbox']"
+            ]
+            
+            ver_titulos = None
+            for selector in checkbox_selectors:
+                try:
+                    if selector.startswith("//"):
+                        ver_titulos = self.wait.until(
+                            EC.presence_of_element_located((By.XPATH, selector))
+                        )
+                    else:
+                        ver_titulos = self.wait.until(
+                            EC.presence_of_element_located((By.CSS_SELECTOR, selector))
+                        )
+                    if ver_titulos:
+                        logger.info(f"Checkbox encontrado usando selector: {selector}")
+                        break
+                except:
+                    continue
+            
+            if not ver_titulos:
+                logger.error("No se pudo encontrar el checkbox 'Ver Títulos'")
+                # Intentar continuar sin el checkbox
+                pass
+            else:
+                if not ver_titulos.is_selected():
+                    ver_titulos.click()
+                    logger.info("Checkbox 'Ver Títulos' marcado")
+                    time.sleep(3)  # Esperar a que se actualice la vista
+            
+            logger.info("Buscando tabla de resultados...")
+            # Intentar diferentes selectores para la tabla
+            table_selectors = [
+                "table",
+                ".table",
+                "#tablaResultados",
+                "//table"
+            ]
+            
+            table = None
+            for selector in table_selectors:
+                try:
+                    if selector.startswith("//"):
+                        table = self.wait.until(
+                            EC.presence_of_element_located((By.XPATH, selector))
+                        )
+                    else:
+                        table = self.wait.until(
+                            EC.presence_of_element_located((By.CSS_SELECTOR, selector))
+                        )
+                    if table:
+                        logger.info(f"Tabla encontrada usando selector: {selector}")
+                        break
+                except:
+                    continue
+            
+            if not table:
+                logger.error("No se pudo encontrar la tabla de resultados")
+                return False
+                
+            # Verificar si hay filas en la tabla
+            rows = table.find_elements(By.TAG_NAME, "tr")
+            if len(rows) > 1:  # Al menos el encabezado y una fila de datos
+                logger.info(f"Se encontraron {len(rows)} filas en la tabla")
+                return True
+            else:
+                logger.warning("La tabla está vacía")
+                return False
+                
         except Exception as e:
             logger.error(f"Error esperando resultados: {str(e)}")
+            # Tomar screenshot para diagnóstico
+            try:
+                screenshot_path = "/tmp/error_screenshot.png"
+                self.driver.save_screenshot(screenshot_path)
+                logger.info(f"Screenshot guardado en: {screenshot_path}")
+            except:
+                logger.error("No se pudo guardar el screenshot")
             return False
 
     def extract_document_info(self, row):
@@ -158,25 +236,40 @@ class NormasActualizadasScraper:
         try:
             logger.info("Iniciando scraping de normas actualizadas...")
             
-            # Cargar página
+            # Intentar con la URL principal
+            logger.info(f"Intentando acceder a: {self.base_url}")
             self.driver.get(self.base_url)
             
-            # Esperar y verificar resultados
+            # Si falla, intentar con la URL de respaldo
             if not self.wait_for_results():
-                logger.error("No se pudieron cargar los resultados")
-                return False
-
+                logger.warning("Fallback: intentando con URL alternativa...")
+                self.driver.get(self.backup_url)
+                if not self.wait_for_results():
+                    logger.error("No se pudieron cargar los resultados en ninguna URL")
+                    return False
+            
+            # Obtener el HTML actual para diagnóstico
+            page_source = self.driver.page_source
+            logger.info(f"Longitud del HTML: {len(page_source)}")
+            
             documents = []
             rows = self.driver.find_elements(By.CSS_SELECTOR, "table tr")[1:]  # Ignorar encabezado
             
-            for row in rows:
+            if not rows:
+                logger.error("No se encontraron filas en la tabla")
+                return False
+                
+            logger.info(f"Procesando {len(rows)} filas...")
+            
+            for idx, row in enumerate(rows, 1):
                 doc_info = self.extract_document_info(row)
                 if doc_info:
                     documents.append(doc_info)
+                    logger.info(f"Documento {idx} procesado: {doc_info['titulo'][:50]}...")
                     
                     # Intentar descargar el PDF
                     if self.click_download(row):
-                        logger.info(f"Descarga iniciada para: {doc_info['titulo']}")
+                        logger.info(f"Descarga iniciada para documento {idx}")
                     
                     # Esperar entre descargas
                     time.sleep(2)
@@ -186,8 +279,13 @@ class NormasActualizadasScraper:
                 self.save_to_s3({
                     'documentos': documents,
                     'total': len(documents),
-                    'fecha_scraping': datetime.now().isoformat()
+                    'fecha_scraping': datetime.now().isoformat(),
+                    'url_origen': self.driver.current_url
                 }, 'metadata')
+                logger.info(f"Metadata guardada para {len(documents)} documentos")
+            else:
+                logger.error("No se encontraron documentos para procesar")
+                return False
                 
             logger.info(f"Scraping completado. {len(documents)} documentos procesados")
             return True
