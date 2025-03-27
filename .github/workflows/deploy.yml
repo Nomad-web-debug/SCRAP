@@ -53,17 +53,20 @@ jobs:
     - name: Obtener Nombre del Bucket
       id: bucket
       working-directory: ./terraform
+      shell: bash
       run: |
-        # Obtener y validar el nombre del bucket
+        # Obtener el nombre del bucket directamente
         BUCKET_NAME=$(terraform output -raw s3_bucket)
+        
+        # Verificar si se obtuvo el nombre
         if [ -z "$BUCKET_NAME" ]; then
           echo "Error: No se pudo obtener el nombre del bucket"
           exit 1
         fi
         
-        # Usar el nuevo formato de GitHub Actions para outputs
-        echo "bucket=$BUCKET_NAME" >> "$GITHUB_OUTPUT"
-        echo "Nombre del bucket obtenido: $BUCKET_NAME"
+        # Guardar el nombre del bucket como output del paso
+        echo "bucket=${BUCKET_NAME}" >> $GITHUB_OUTPUT
+        echo "Nombre del bucket obtenido: ${BUCKET_NAME}"
 
     - name: Verificar API de Claude
       env:
