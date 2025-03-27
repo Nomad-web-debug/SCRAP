@@ -57,59 +57,22 @@ jobs:
       id: tf-outputs
       working-directory: ./terraform
       run: |
-        # Esperar a que los outputs estén disponibles
-        sleep 15
-        
-        # Obtener cada output individualmente y verificar
         echo "Obteniendo outputs de Terraform..."
         
-        # S3 Bucket
-        BUCKET=$(terraform output -raw s3_bucket 2>/dev/null || echo "")
+        # Esperar a que el estado se actualice
+        sleep 5
+        
+        # Obtener el nombre del bucket
+        BUCKET=$(terraform output -raw s3_bucket || echo "")
         if [ -z "$BUCKET" ]; then
           echo "Error: No se pudo obtener el nombre del bucket"
           terraform output
           exit 1
         fi
-        echo "bucket=$BUCKET" >> $GITHUB_OUTPUT
+        
+        # Guardar el nombre del bucket usando el nuevo formato de GitHub Actions
+        echo "bucket=${BUCKET}" >> "$GITHUB_OUTPUT"
         echo "Bucket name: $BUCKET"
-        
-        # Database Host
-        DB_HOST=$(terraform output -raw db_host 2>/dev/null || echo "")
-        if [ -z "$DB_HOST" ]; then
-          echo "Error: No se pudo obtener el host de la base de datos"
-          exit 1
-        fi
-        echo "db_host=$DB_HOST" >> $GITHUB_OUTPUT
-        echo "DB Host: $DB_HOST"
-        
-        # Database Port
-        DB_PORT=$(terraform output -raw db_port 2>/dev/null || echo "")
-        if [ -z "$DB_PORT" ]; then
-          echo "Error: No se pudo obtener el puerto de la base de datos"
-          exit 1
-        fi
-        echo "db_port=$DB_PORT" >> $GITHUB_OUTPUT
-        echo "DB Port: $DB_PORT"
-        
-        # Database Name
-        DB_NAME=$(terraform output -raw db_name 2>/dev/null || echo "")
-        if [ -z "$DB_NAME" ]; then
-          echo "Error: No se pudo obtener el nombre de la base de datos"
-          exit 1
-        fi
-        echo "db_name=$DB_NAME" >> $GITHUB_OUTPUT
-        echo "DB Name: $DB_NAME"
-        
-        # Database User
-        DB_USER=$(terraform output -raw db_user 2>/dev/null || echo "")
-        if [ -z "$DB_USER" ]; then
-          echo "Error: No se pudo obtener el usuario de la base de datos"
-          exit 1
-        fi
-        echo "db_user=$DB_USER" >> $GITHUB_OUTPUT
-        echo "DB User: $DB_USER"
-        
-        echo "Todos los outputs obtenidos correctamente"
 
     # 3. Verificar API de Claude
     - name: Check Claude API
