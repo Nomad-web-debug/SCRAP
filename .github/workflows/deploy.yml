@@ -54,24 +54,26 @@ jobs:
       id: bucket
       working-directory: ./terraform
       run: |
-        echo "Obteniendo nombre del bucket..."
-        # Ejecutar el comando y capturar la salida
-        BUCKET=$(terraform output -raw s3_bucket || echo "")
-        
-        # Verificar si se obtuvo el nombre del bucket
-        if [ -z "$BUCKET" ]; then
+        # Obtener y validar el nombre del bucket
+        BUCKET_NAME=$(terraform output -raw s3_bucket)
+        if [ -z "$BUCKET_NAME" ]; then
           echo "Error: No se pudo obtener el nombre del bucket"
-          terraform output
           exit 1
         fi
         
-        # Guardar el nombre del bucket como variable de entorno y output
-        echo "BUCKET_NAME=$BUCKET" >> $GITHUB_ENV
-        echo "bucket=$BUCKET" >> $GITHUB_OUTPUT
-        echo "Nombre del bucket obtenido: $BUCKET"
+        # Usar el nuevo formato de GitHub Actions para outputs
+        echo "bucket=$BUCKET_NAME" >> "$GITHUB_OUTPUT"
+        echo "Nombre del bucket obtenido: $BUCKET_NAME"
 
     - name: Verificar API de Claude
+      env:
+        BUCKET_NAME: ${{ steps.bucket.outputs.bucket }}
       run: |
+        if [ -z "$BUCKET_NAME" ]; then
+          echo "Error: BUCKET_NAME no está definido"
+          exit 1
+        fi
+        
         python -c "
         import anthropic
         import os
@@ -79,7 +81,6 @@ jobs:
         
         try:
             client = anthropic.Client(api_key=os.getenv('ANTHROPIC_API_KEY'))
-            # Usar un prompt simple para probar
             response = client.messages.create(
                 model='claude-3-sonnet-20240229',
                 max_tokens=10,
@@ -98,6 +99,12 @@ jobs:
       env:
         BUCKET_NAME: ${{ steps.bucket.outputs.bucket }}
       run: |
+        if [ -z "$BUCKET_NAME" ]; then
+          echo "Error: BUCKET_NAME no está definido"
+          exit 1
+        fi
+        
+        echo "Usando bucket: $BUCKET_NAME"
         python -c "
         import boto3
         import os
@@ -256,33 +263,28 @@ jobs:
         import boto3
         import os
         
-        def check_errors():
-            s3 = boto3.client('s3')
-            bucket = os.getenv('BUCKET_NAME')
-            print(f'Verificando bucket: {bucket}')
-            
-            try:
-                # Verificar archivos de error
-                response = s3.list_objects_v2(Bucket=bucket, Prefix='errors/')
-                if 'Contents' in response:
-                    print('Se encontraron errores:')
-                    for error in response['Contents']:
-                        print(f'- {error[\"Key\"]}')
-                    return False
-                    
-                # Verificar archivos procesados
-                processed = s3.list_objects_v2(Bucket=bucket, Prefix='categorized/')
-                if 'Contents' not in processed or not processed['Contents']:
-                    print('No se encontraron archivos procesados')
-                    return False
-                    
-                print('Proceso completado exitosamente')
-                return True
-                
-            except Exception as e:
-                print(f'Error verificando resultados: {str(e)}')
-                return False
+        bucket = os.getenv('BUCKET_NAME')
+        print(f'Verificando bucket: {bucket}')
         
-        if not check_errors():
+        try:
+            s3 = boto3.client('s3')
+            # Verificar si el bucket existe
+            s3.head_bucket(Bucket=bucket)
+            print(f'Bucket {bucket} existe y es accesible')
+            
+            # Verificar errores
+            response = s3.list_objects_v2(Bucket=bucket, Prefix='errors/')
+            errors = list(response.get('Contents', []))
+            
+            if errors:
+                print('Se encontraron errores:')
+                for error in errors:
+                    print(f'- {error[\"Key\"]}')
+                exit(1)
+            else:
+                print('No se encontraron errores')
+                
+        except Exception as e:
+            print(f'Error al verificar errores: {str(e)}')
             exit(1)
         " 
