@@ -36,24 +36,40 @@ class NormasActualizadasScraper:
             chromium_path = shutil.which('chromium')
             if not chromium_path:
                 chromium_path = shutil.which('chromium-browser')
-            
             if not chromium_path:
-                raise Exception("No se encontró el binario de Chromium")
+                chromium_path = '/snap/bin/chromium'  # Ruta específica para Ubuntu con snap
+            
+            if not chromium_path or not os.path.exists(chromium_path):
+                raise Exception(f"No se encontró el binario de Chromium en {chromium_path}")
             
             logger.info(f"Usando Chromium en: {chromium_path}")
             
             chrome_options = Options()
-            chrome_options.add_argument('--headless')
+            chrome_options.add_argument('--headless=new')  # Nueva sintaxis para modo headless
             chrome_options.add_argument('--no-sandbox')
             chrome_options.add_argument('--disable-dev-shm-usage')
+            chrome_options.add_argument('--disable-gpu')  # Necesario en algunos sistemas
+            chrome_options.add_argument('--remote-debugging-port=9222')  # Puerto para DevTools
+            chrome_options.add_argument('--disable-extensions')
+            chrome_options.add_argument('--disable-software-rasterizer')
             chrome_options.binary_location = chromium_path
             
             # Configurar el servicio de ChromeDriver
+            from selenium.webdriver.chrome.service import Service
+            from webdriver_manager.chrome import ChromeDriverManager
+            from webdriver_manager.core.os_manager import ChromeType
+            
             service = Service(
                 ChromeDriverManager(
-                    chrome_type=ChromeType.CHROMIUM
+                    chrome_type=ChromeType.CHROMIUM,
+                    version="latest"
                 ).install()
             )
+            
+            # Crear directorio temporal para ChromeDriver
+            import tempfile
+            temp_dir = tempfile.mkdtemp()
+            service.creation_flags = "--log-path={}/chromedriver.log".format(temp_dir)
             
             self.driver = webdriver.Chrome(
                 service=service,
