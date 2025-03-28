@@ -495,33 +495,20 @@ class NormasActualizadasScraper:
     def click_download(self, row):
         """Hace clic en el botón de descarga y espera a que se complete"""
         try:
-            # Intentar diferentes selectores en orden
-            selectors = [
-                ('xpath', '//input[@type="button" and @value="Descargar"]'),
-                ('css', 'input[type="button"][value="Descargar"]'),
-                ('xpath', '//input[@value="Descargar"]')
-            ]
+            # Buscar el botón de descarga con la clase correcta
+            download_button = row.find_element(By.CSS_SELECTOR, 'input.btn-primary[value="Descargar"]')
             
-            for selector_type, selector in selectors:
-                try:
-                    if selector_type == 'xpath':
-                        download_button = row.find_element(By.XPATH, selector)
-                    else:
-                        download_button = row.find_element(By.CSS_SELECTOR, selector)
-                    
-                    if download_button and download_button.is_displayed():
-                        # Hacer scroll al botón
-                        self.driver.execute_script("arguments[0].scrollIntoView(true);", download_button)
-                        time.sleep(1)
-                        
-                        # Intentar click
-                        download_button.click()
-                        
-                        logger.info(f"Botón de descarga encontrado usando selector: {selector}")
-                        time.sleep(2)
-                        return True
-                except:
-                    continue
+            if download_button and download_button.is_displayed():
+                # Hacer scroll al botón
+                self.driver.execute_script("arguments[0].scrollIntoView(true);", download_button)
+                time.sleep(1)
+                
+                # Intentar click
+                download_button.click()
+                
+                logger.info("Botón de descarga clickeado")
+                time.sleep(2)
+                return True
             
             logger.error("No se pudo encontrar el botón de descarga")
             return False
