@@ -101,38 +101,52 @@ class NormasActualizadasScraper:
         try:
             chrome_options = Options()
             
-            # Configuraciones específicas para cloud
-            chrome_options.add_argument('--headless=new')
+            # Configuraciones específicas para entorno cloud
+            chrome_options.add_argument('--headless')  # Usar headless en lugar de --headless=new
             chrome_options.add_argument('--no-sandbox')
             chrome_options.add_argument('--disable-dev-shm-usage')
             chrome_options.add_argument('--disable-gpu')
-            chrome_options.add_argument('--single-process')
-            chrome_options.add_argument('--disable-extensions')
-            chrome_options.add_argument('--disable-dev-tools')
-            chrome_options.add_argument('--ignore-certificate-errors')
+            chrome_options.add_argument('--remote-debugging-port=9222')  # Agregar puerto para debugging
             chrome_options.add_argument('--window-size=1920,1080')
-            chrome_options.add_argument('--start-maximized')
+            chrome_options.add_argument('--disable-extensions')
+            chrome_options.add_argument('--disable-infobars')
+            chrome_options.add_argument('--disable-notifications')
+            chrome_options.add_argument('--enable-automation')
+            chrome_options.add_argument('--log-level=3')  # Minimizar logs
             chrome_options.add_argument('--disable-blink-features=AutomationControlled')
             
-            # Configurar directorio de descargas
+            # Configuraciones adicionales para estabilidad
+            chrome_options.add_experimental_option('excludeSwitches', ['enable-logging'])
+            chrome_options.add_experimental_option('useAutomationExtension', False)
+            
+            # Configurar directorio de descargas y preferencias
             prefs = {
                 'download.default_directory': self.download_dir,
                 'download.prompt_for_download': False,
                 'download.directory_upgrade': True,
                 'safebrowsing.enabled': True,
-                'plugins.always_open_pdf_externally': True
+                'plugins.always_open_pdf_externally': True,
+                'profile.default_content_settings.popups': 0,
+                'profile.default_content_setting_values.automatic_downloads': 1
             }
             chrome_options.add_experimental_option('prefs', prefs)
             
-            # Configurar el servicio de ChromeDriver
-            service = Service(ChromeDriverManager().install())
+            # Configurar el servicio de ChromeDriver con log silencioso
+            service = Service(
+                ChromeDriverManager().install(),
+                log_output=os.path.devnull  # Silenciar logs del servicio
+            )
             
             self.driver = webdriver.Chrome(
                 service=service,
                 options=chrome_options
             )
             
+            # Configurar timeouts más largos para estabilidad
+            self.driver.set_page_load_timeout(30)
+            self.driver.implicitly_wait(10)
             self.wait = WebDriverWait(self.driver, 20)
+            
             logger.info("Driver de Selenium configurado correctamente")
             
         except Exception as e:
