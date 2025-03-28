@@ -36,7 +36,7 @@ class NormasActualizadasScraper:
         # Configuración de AWS con bucket fijo
         try:
             # Nombre fijo del bucket - NO CAMBIAR
-            self.bucket_name = 'clasificador-docs-13dgv6lo'  # Bucket correcto del entorno
+            self.bucket_name = 'clasificador-docs-principal'  # Bucket definido en Terraform
             aws_access_key = os.getenv('AWS_ACCESS_KEY_ID')
             aws_secret_key = os.getenv('AWS_SECRET_ACCESS_KEY')
             aws_region = os.getenv('AWS_DEFAULT_REGION', 'us-east-2')
