@@ -35,8 +35,8 @@ class NormasActualizadasScraper:
         
         # Configuración de AWS con bucket fijo
         try:
-            # Usar un nombre de bucket fijo
-            self.bucket_name = 'clasificador-docs-p60wpcu7'  # Nombre fijo del bucket
+            # Nombre fijo del bucket - NO CAMBIAR
+            self.bucket_name = 'clasificador-docs-p60wpcu7'
             aws_access_key = os.getenv('AWS_ACCESS_KEY_ID')
             aws_secret_key = os.getenv('AWS_SECRET_ACCESS_KEY')
             aws_region = os.getenv('AWS_DEFAULT_REGION', 'us-east-1')
@@ -608,6 +608,8 @@ class NormasActualizadasScraper:
             # Generar nombre del archivo con timestamp
             key = f"{key_prefix}/{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
             
+            logger.info(f"Guardando datos en bucket {self.bucket_name} con key: {key}")
+            
             # Guardar en formato JSON legible
             self.s3_client.put_object(
                 Bucket=self.bucket_name,
@@ -615,6 +617,14 @@ class NormasActualizadasScraper:
                 Body=json.dumps(data, ensure_ascii=False, indent=2),
                 ContentType='application/json'
             )
+            
+            # Verificar que el archivo se guardó correctamente
+            try:
+                self.s3_client.head_object(Bucket=self.bucket_name, Key=key)
+                logger.info(f"Archivo guardado exitosamente en S3: {key}")
+            except Exception as e:
+                logger.error(f"Error verificando archivo en S3: {str(e)}")
+                raise
             
             # Generar URL firmada para descarga (válida por 7 días)
             url = self.s3_client.generate_presigned_url(
@@ -628,15 +638,14 @@ class NormasActualizadasScraper:
             
             logger.info(f"Datos guardados en S3: {key}")
             logger.info(f"Enlace de descarga (válido por 7 días): {url}")
-            
-            # Guardar el enlace en un archivo de log
             logger.info(f"Para acceder a los datos, use este enlace hasta {(datetime.now() + timedelta(days=7)).strftime('%Y-%m-%d %H:%M:%S')}")
             
             return True
                 
         except Exception as e:
             logger.error(f"Error guardando en S3: {str(e)}")
-            raise  # Propagar el error para manejarlo en el nivel superior
+            logger.error(f"Bucket: {self.bucket_name}, Key: {key if 'key' in locals() else 'no generada'}")
+            raise
 
     def scrape(self):
         """Proceso principal de scraping"""
@@ -735,7 +744,12 @@ if __name__ == '__main__':
         scraper = NormasActualizadasScraper()
         total_docs = scraper.scrape()
         print(f"Total de documentos procesados: {total_docs}")
-        exit(0 if total_docs > 0 else 1) 
+        if total_docs > 0:
+            logger.info("Proceso completado exitosamente")
+            exit(0)
+        else:
+            logger.error("No se encontraron documentos para procesar")
+            exit(1)
     except Exception as e:
         logger.error(f"Error en la ejecución principal: {str(e)}")
         exit(1) 
