@@ -36,10 +36,10 @@ class NormasActualizadasScraper:
         # Configuración de AWS con bucket fijo
         try:
             # Nombre fijo del bucket - NO CAMBIAR
-            self.bucket_name = 'clasificador-docs-p60wpcu7'
+            self.bucket_name = 'clasificador-docs-13dgv6lo'  # Bucket correcto del entorno
             aws_access_key = os.getenv('AWS_ACCESS_KEY_ID')
             aws_secret_key = os.getenv('AWS_SECRET_ACCESS_KEY')
-            aws_region = os.getenv('AWS_DEFAULT_REGION', 'us-east-1')
+            aws_region = os.getenv('AWS_DEFAULT_REGION', 'us-east-2')
             
             if not all([aws_access_key, aws_secret_key]):
                 raise ValueError("Faltan credenciales de AWS")
@@ -639,6 +639,12 @@ class NormasActualizadasScraper:
             logger.info(f"Datos guardados en S3: {key}")
             logger.info(f"Enlace de descarga (válido por 7 días): {url}")
             logger.info(f"Para acceder a los datos, use este enlace hasta {(datetime.now() + timedelta(days=7)).strftime('%Y-%m-%d %H:%M:%S')}")
+            
+            # Guardar información del último archivo para verificación
+            with open('last_metadata.txt', 'w') as f:
+                f.write(f"bucket={self.bucket_name}\n")
+                f.write(f"key={key}\n")
+                f.write(f"timestamp={datetime.now().isoformat()}\n")
             
             return True
                 
