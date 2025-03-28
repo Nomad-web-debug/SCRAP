@@ -33,9 +33,10 @@ class NormasActualizadasScraper:
         self.base_url = "https://spij.minjus.gob.pe/normas/normasactualizadas"
         self.backup_url = "https://diariooficial.elperuano.pe/Normas/normasactualizadas"
         
-        # Configuración de AWS
+        # Configuración de AWS con bucket fijo
         try:
-            self.bucket_name = os.getenv('BUCKET_NAME', 'clasificador-docs-p2m9n0ly')
+            # Usar un nombre de bucket fijo
+            self.bucket_name = 'clasificador-docs-p60wpcu7'  # Nombre fijo del bucket
             aws_access_key = os.getenv('AWS_ACCESS_KEY_ID')
             aws_secret_key = os.getenv('AWS_SECRET_ACCESS_KEY')
             aws_region = os.getenv('AWS_DEFAULT_REGION', 'us-east-1')
@@ -734,9 +735,7 @@ if __name__ == '__main__':
         scraper = NormasActualizadasScraper()
         total_docs = scraper.scrape()
         print(f"Total de documentos procesados: {total_docs}")
-        if total_docs == 0:
-            exit(1)
-        exit(0)
+        exit(0 if total_docs > 0 else 1) 
     except Exception as e:
         logger.error(f"Error en la ejecución principal: {str(e)}")
         exit(1) 
