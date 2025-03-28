@@ -34,30 +34,22 @@ class NormasActualizadasScraper:
         self.bucket_name = os.getenv('S3_BUCKET')
         self.base_url = "https://diariooficial.elperuano.pe/normas/normasactualizadas"
         self.backup_url = "https://diariooficial.elperuano.pe/normas"
+        
+        # Usar /tmp para entornos cloud (Lambda, EC2, etc)
         self.download_dir = "/tmp/pdfs"
+        self.screenshot_dir = "/tmp/screenshots"
         self.feedback_file = "categorization_feedback.json"
         self.processed_docs_file = "processed_documents.json"
-        os.makedirs(self.download_dir, exist_ok=True)
+        
+        # Crear directorios necesarios
+        for directory in [self.download_dir, self.screenshot_dir]:
+            os.makedirs(directory, exist_ok=True)
         
         # Cargar documentos ya procesados
         self.processed_docs = self.load_processed_docs()
         
-        # Configurar Chrome
-        chrome_options = Options()
-        chrome_options.add_argument('--headless')
-        chrome_options.add_argument('--no-sandbox')
-        chrome_options.add_experimental_option(
-            'prefs',
-            {
-                'download.default_directory': self.download_dir,
-                'download.prompt_for_download': False,
-                'plugins.always_open_pdf_externally': True
-            }
-        )
-        
-        service = Service(ChromeDriverManager(chrome_type=ChromeType.CHROMIUM).install())
-        self.driver = webdriver.Chrome(service=service, options=chrome_options)
-        self.driver.implicitly_wait(10)
+        # Inicializar el driver y wait
+        self.setup_driver()
         
         # Cargar retroalimentación existente
         self.feedback_data = self.load_feedback_data()
@@ -105,60 +97,41 @@ class NormasActualizadasScraper:
         return f"{base}_{self.id_counter}"
 
     def setup_driver(self):
-        """Configura el driver de Selenium"""
+        """Configura el driver de Selenium para entorno cloud"""
         try:
-            # Verificar que Chromium está instalado
-            import shutil
-            chromium_path = shutil.which('chromium')
-            if not chromium_path:
-                chromium_path = shutil.which('chromium-browser')
-            if not chromium_path:
-                chromium_path = '/snap/bin/chromium'  # Ruta específica para Ubuntu con snap
-            
-            if not chromium_path or not os.path.exists(chromium_path):
-                raise Exception(f"No se encontró el binario de Chromium en {chromium_path}")
-            
-            logger.info(f"Usando Chromium en: {chromium_path}")
-            
             chrome_options = Options()
-            chrome_options.add_argument('--headless=new')  # Nueva sintaxis para modo headless
+            
+            # Configuraciones específicas para cloud
+            chrome_options.add_argument('--headless=new')
             chrome_options.add_argument('--no-sandbox')
             chrome_options.add_argument('--disable-dev-shm-usage')
             chrome_options.add_argument('--disable-gpu')
+            chrome_options.add_argument('--single-process')
             chrome_options.add_argument('--disable-extensions')
-            chrome_options.add_argument('--disable-software-rasterizer')
+            chrome_options.add_argument('--disable-dev-tools')
+            chrome_options.add_argument('--ignore-certificate-errors')
             chrome_options.add_argument('--window-size=1920,1080')
             chrome_options.add_argument('--start-maximized')
             chrome_options.add_argument('--disable-blink-features=AutomationControlled')
-            chrome_options.add_argument('--disable-web-security')
-            chrome_options.add_argument('--allow-running-insecure-content')
-            chrome_options.add_argument('--disable-setuid-sandbox')
-            chrome_options.add_argument('--disable-infobars')
-            chrome_options.add_argument('--ignore-certificate-errors')
-            chrome_options.add_argument('--remote-debugging-pipe')  # Usar pipe en lugar de puerto
-            chrome_options.binary_location = chromium_path
+            
+            # Configurar directorio de descargas
+            prefs = {
+                'download.default_directory': self.download_dir,
+                'download.prompt_for_download': False,
+                'download.directory_upgrade': True,
+                'safebrowsing.enabled': True,
+                'plugins.always_open_pdf_externally': True
+            }
+            chrome_options.add_experimental_option('prefs', prefs)
             
             # Configurar el servicio de ChromeDriver
-            from selenium.webdriver.chrome.service import Service
-            from webdriver_manager.chrome import ChromeDriverManager
-            from webdriver_manager.core.os_manager import ChromeType
-            
-            # Crear directorio temporal para logs
-            import tempfile
-            temp_dir = tempfile.mkdtemp()
-            log_path = f"{temp_dir}/chromedriver.log"
-            
-            service = Service(
-                ChromeDriverManager(
-                    chrome_type=ChromeType.CHROMIUM
-                ).install(),
-                log_path=log_path
-            )
+            service = Service(ChromeDriverManager().install())
             
             self.driver = webdriver.Chrome(
                 service=service,
                 options=chrome_options
             )
+            
             self.wait = WebDriverWait(self.driver, 20)
             logger.info("Driver de Selenium configurado correctamente")
             
@@ -167,7 +140,7 @@ class NormasActualizadasScraper:
             raise
 
     def wait_for_results(self):
-        """Espera a que los resultados se carguen usando Selenium"""
+        """Espera a que los resultados se carguen"""
         try:
             logger.info("Esperando a que la página cargue...")
             
@@ -176,86 +149,13 @@ class NormasActualizadasScraper:
                 EC.presence_of_element_located((By.TAG_NAME, "body"))
             )
             
-            # Esperar a que no haya más solicitudes AJAX pendientes
-            self.driver.execute_script("""
-                window.ajaxComplete = false;
-                var oldSend = XMLHttpRequest.prototype.send;
-                XMLHttpRequest.prototype.send = function() {
-                    window.ajaxComplete = false;
-                    oldSend.apply(this, arguments);
-                    this.addEventListener('loadend', function() {
-                        window.ajaxComplete = true;
-                    });
-                };
-            """)
+            # Dar tiempo para que la página se cargue completamente
+            time.sleep(5)
             
-            # Dar tiempo adicional para que la página se renderice completamente
-            time.sleep(10)  # Aumentar el tiempo de espera
-            
-            # Esperar a que termine cualquier animación
-            self.driver.execute_script("""
-                var lastHeight = document.body.scrollHeight;
-                var checkCount = 0;
-                var interval = setInterval(function() {
-                    var currentHeight = document.body.scrollHeight;
-                    if (currentHeight === lastHeight || checkCount > 10) {
-                        clearInterval(interval);
-                        window.heightStabilized = true;
-                    }
-                    lastHeight = currentHeight;
-                    checkCount++;
-                }, 500);
-            """)
-            
-            # Esperar a que la altura se estabilice
-            self.wait.until(lambda d: d.execute_script("return window.heightStabilized === true"))
-            
-            logger.info("Buscando checkbox 'Ver Títulos'...")
-            # Intentar diferentes selectores para el checkbox
-            checkbox_selectors = [
-                "input[type='checkbox']",
-                "#chkVerTitulos",
-                "input[name='verTitulos']",
-                "//input[@type='checkbox']"
-            ]
-            
-            ver_titulos = None
-            for selector in checkbox_selectors:
-                try:
-                    if selector.startswith("//"):
-                        ver_titulos = self.wait.until(
-                            EC.presence_of_element_located((By.XPATH, selector))
-                        )
-                    else:
-                        ver_titulos = self.wait.until(
-                            EC.presence_of_element_located((By.CSS_SELECTOR, selector))
-                        )
-                    if ver_titulos:
-                        logger.info(f"Checkbox encontrado usando selector: {selector}")
-                        break
-                except:
-                    continue
-            
-            if not ver_titulos:
-                logger.error("No se pudo encontrar el checkbox 'Ver Títulos'")
-                # Intentar continuar sin el checkbox
-                pass
-            else:
-                if not ver_titulos.is_selected():
-                    ver_titulos.click()
-                    logger.info("Checkbox 'Ver Títulos' marcado")
-                    time.sleep(3)  # Esperar a que se actualice la vista
-            
-            logger.info("Buscando tabla de resultados...")
-            # Intentar diferentes selectores para la tabla
-            table_selectors = [
-                "table",
-                ".table",
-                "#tablaResultados",
-                "//table"
-            ]
-            
+            # Buscar tabla de resultados
             table = None
+            table_selectors = ["table", ".table", "#tablaResultados", "//table"]
+            
             for selector in table_selectors:
                 try:
                     if selector.startswith("//"):
@@ -275,10 +175,10 @@ class NormasActualizadasScraper:
             if not table:
                 logger.error("No se pudo encontrar la tabla de resultados")
                 return False
-                
+            
             # Verificar si hay filas en la tabla
             rows = table.find_elements(By.TAG_NAME, "tr")
-            if len(rows) > 1:  # Al menos el encabezado y una fila de datos
+            if len(rows) > 1:
                 logger.info(f"Se encontraron {len(rows)} filas en la tabla")
                 return True
             else:
@@ -289,9 +189,15 @@ class NormasActualizadasScraper:
             logger.error(f"Error esperando resultados: {str(e)}")
             # Tomar screenshot para diagnóstico
             try:
-                screenshot_path = "/tmp/error_screenshot.png"
+                screenshot_path = os.path.join(self.screenshot_dir, "error_screenshot.png")
                 self.driver.save_screenshot(screenshot_path)
-                logger.info(f"Screenshot guardado en: {screenshot_path}")
+                # Subir screenshot a S3 para diagnóstico
+                self.s3_client.upload_file(
+                    screenshot_path,
+                    self.bucket_name,
+                    f"diagnostics/screenshots/{datetime.now().strftime('%Y%m%d_%H%M%S')}_error.png"
+                )
+                logger.info(f"Screenshot guardado y subido a S3")
             except:
                 logger.error("No se pudo guardar el screenshot")
             return False
