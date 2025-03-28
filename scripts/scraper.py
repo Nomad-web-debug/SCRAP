@@ -387,6 +387,7 @@ class NormasActualizadasScraper:
                 # Descargar PDF y subir a S3
                 pdf_path = None
                 if self.click_download(row):
+                    logger.info(f"Descarga iniciada para documento {id_norma}")
                     pdf_path = self.wait_for_download()
                     if pdf_path:
                         s3_key = f"raw/{id_norma}.pdf"
@@ -495,20 +496,33 @@ class NormasActualizadasScraper:
     def click_download(self, row):
         """Hace clic en el botón de descarga y espera a que se complete"""
         try:
-            # Buscar el botón de descarga
-            download_button = row.find_element(By.CSS_SELECTOR, 'input[type="button"][value="Descargar"]')
+            # Intentar diferentes selectores en orden
+            selectors = [
+                ('xpath', '//input[@type="button" and @value="Descargar"]'),
+                ('css', 'input[type="button"][value="Descargar"]'),
+                ('xpath', '//input[@value="Descargar"]')
+            ]
             
-            if download_button and download_button.is_displayed():
-                # Hacer scroll al botón
-                self.driver.execute_script("arguments[0].scrollIntoView(true);", download_button)
-                time.sleep(1)
-                
-                # Intentar click
-                download_button.click()
-                
-                logger.info("Botón de descarga clickeado")
-                time.sleep(2)
-                return True
+            for selector_type, selector in selectors:
+                try:
+                    if selector_type == 'xpath':
+                        download_button = row.find_element(By.XPATH, selector)
+                    else:
+                        download_button = row.find_element(By.CSS_SELECTOR, selector)
+                    
+                    if download_button and download_button.is_displayed():
+                        # Hacer scroll al botón
+                        self.driver.execute_script("arguments[0].scrollIntoView(true);", download_button)
+                        time.sleep(1)
+                        
+                        # Intentar click
+                        download_button.click()
+                        
+                        logger.info(f"Botón de descarga encontrado usando selector: {selector}")
+                        time.sleep(2)
+                        return True
+                except:
+                    continue
             
             logger.error("No se pudo encontrar el botón de descarga")
             return False
