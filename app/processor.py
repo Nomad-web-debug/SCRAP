@@ -4,7 +4,7 @@ import boto3
 import PyPDF2
 import json
 from datetime import datetime
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 import re
 from sqlalchemy import create_engine, text
 from config import processing_config, LOGGING_CONFIG
@@ -12,6 +12,15 @@ import anthropic
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.vectorstores import FAISS
 from langchain.embeddings import HuggingFaceEmbeddings
+from transformers import pipeline
+import spacy
+from langchain.chat_models import ChatOpenAI
+from langchain.prompts import ChatPromptTemplate
+from langchain.schema import Document
+from dotenv import load_dotenv
+
+# Cargar variables de entorno
+load_dotenv()
 
 # Configurar logging
 logging.config.dictConfig(LOGGING_CONFIG)
@@ -396,6 +405,152 @@ class NormaProcessor:
             logger.error(f"Error procesando documento {key}: {str(e)}")
             if os.path.exists(local_path):
                 os.remove(local_path)
+
+class DocumentAIProcessor:
+    def __init__(self):
+        self.s3_client = boto3.client('s3')
+        self.bucket_name = os.getenv('S3_BUCKET')
+        
+        # Inicializar modelos de NLP
+        self.nlp = spacy.load("es_core_news_lg")
+        self.zero_shot = pipeline("zero-shot-classification", model="facebook/bart-large-mnli")
+        
+        # Inicializar ChatGPT para análisis avanzado
+        self.chat_model = ChatOpenAI(
+            model_name="gpt-3.5-turbo",
+            temperature=0.3
+        )
+        
+        # Plantilla para análisis de texto
+        self.analysis_prompt = ChatPromptTemplate.from_messages([
+            ("system", "Eres un experto en análisis legal y clasificación de documentos. Analiza el siguiente texto y extrae la información relevante."),
+            ("user", "Texto del documento: {text}\n\nPor favor, analiza este texto y proporciona:\n1. Resumen ejecutivo\n2. Categoría principal\n3. Palabras clave\n4. Grupo al que pertenece (A, B o C)\n5. Justificación del grupo asignado")
+        ])
+
+    def process_document_batch(self, start_date: Optional[str] = None):
+        """Procesa un lote de documentos desde una fecha específica"""
+        try:
+            # Listar documentos PDF en S3
+            prefix = 'pdfs/'
+            paginator = self.s3_client.get_paginator('list_objects_v2')
+            
+            for page in paginator.paginate(Bucket=self.bucket_name, Prefix=prefix):
+                for obj in page.get('Contents', []):
+                    # Verificar fecha si se especifica
+                    if start_date and obj['LastModified'].strftime('%Y-%m-%d') < start_date:
+                        continue
+                    
+                    # Procesar documento
+                    doc_key = obj['Key']
+                    try:
+                        self.process_single_document(doc_key)
+                    except Exception as e:
+                        logger.error(f"Error procesando documento {doc_key}: {str(e)}")
+                        continue
+
+        except Exception as e:
+            logger.error(f"Error en el procesamiento por lotes: {str(e)}")
+
+    def process_single_document(self, pdf_key: str):
+        """Procesa un documento individual"""
+        try:
+            # Descargar PDF
+            local_path = f"/tmp/{os.path.basename(pdf_key)}"
+            self.s3_client.download_file(self.bucket_name, pdf_key, local_path)
+            
+            # Extraer texto
+            text = self.extract_text(local_path)
+            if not text:
+                logger.warning(f"No se pudo extraer texto de {pdf_key}")
+                return
+            
+            # Analizar con IA
+            analysis = self.analyze_text(text)
+            
+            # Actualizar JSON correspondiente
+            self.update_document_metadata(pdf_key, analysis)
+            
+            # Limpiar
+            os.remove(local_path)
+            
+        except Exception as e:
+            logger.error(f"Error procesando documento {pdf_key}: {str(e)}")
+            if os.path.exists(local_path):
+                os.remove(local_path)
+
+    def extract_text(self, pdf_path: str) -> str:
+        """Extrae texto de un PDF"""
+        try:
+            with open(pdf_path, 'rb') as file:
+                reader = PyPDF2.PdfReader(file)
+                text = ""
+                for page in reader.pages:
+                    text += page.extract_text()
+            return text.strip()
+        except Exception as e:
+            logger.error(f"Error extrayendo texto del PDF: {str(e)}")
+            return ""
+
+    def analyze_text(self, text: str) -> Dict:
+        """Analiza el texto usando múltiples modelos de IA"""
+        try:
+            # Análisis con ChatGPT
+            chain = self.analysis_prompt | self.chat_model
+            gpt_analysis = chain.invoke({"text": text[:4000]})  # Limitar longitud
+            
+            # Análisis con spaCy para entidades y frases clave
+            doc = self.nlp(text[:10000])  # Limitar para rendimiento
+            entities = [ent.text for ent in doc.ents if ent.label_ in ['ORG', 'LAW', 'DATE']]
+            
+            # Clasificación con zero-shot
+            categories = ['CONSTITUCIONAL', 'ADMINISTRATIVO', 'PENAL', 'CIVIL', 'LABORAL']
+            classification = self.zero_shot(text[:1000], categories, multi_label=True)
+            
+            return {
+                'gpt_analysis': gpt_analysis.content,
+                'entities': entities,
+                'classification': {
+                    'labels': classification['labels'],
+                    'scores': classification['scores']
+                },
+                'timestamp': datetime.now().isoformat()
+            }
+            
+        except Exception as e:
+            logger.error(f"Error en análisis de texto: {str(e)}")
+            return {}
+
+    def update_document_metadata(self, pdf_key: str, analysis: Dict):
+        """Actualiza el JSON de metadata con el análisis de IA"""
+        try:
+            # Construir key del JSON
+            json_key = pdf_key.replace('pdfs/', 'metadata/').replace('.pdf', '.json')
+            
+            try:
+                # Intentar obtener JSON existente
+                response = self.s3_client.get_object(Bucket=self.bucket_name, Key=json_key)
+                metadata = json.loads(response['Body'].read().decode('utf-8'))
+            except:
+                metadata = {}
+            
+            # Actualizar con análisis de IA
+            metadata.update({
+                'ai_analysis': analysis,
+                'last_updated': datetime.now().isoformat()
+            })
+            
+            # Guardar JSON actualizado
+            self.s3_client.put_object(
+                Bucket=self.bucket_name,
+                Key=json_key,
+                Body=json.dumps(metadata, ensure_ascii=False, indent=2),
+                ContentType='application/json'
+            )
+            
+            logger.info(f"Metadata actualizada para {pdf_key}")
+            
+        except Exception as e:
+            logger.error(f"Error actualizando metadata: {str(e)}")
 
 def main():
     """Función principal"""

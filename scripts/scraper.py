@@ -30,37 +30,79 @@ logger = logging.getLogger(__name__)
 
 class NormasActualizadasScraper:
     def __init__(self):
-        self.base_url = "https://spij.minjus.gob.pe/normas/normasactualizadas"
-        self.backup_url = "https://diariooficial.elperuano.pe/Normas/normasactualizadas"
+        self.s3_client = boto3.client('s3')
+        self.bucket_name = os.getenv('S3_BUCKET')
+        self.base_url = "https://diariooficial.elperuano.pe/normas/normasactualizadas"
+        self.backup_url = "https://diariooficial.elperuano.pe/normas"
+        self.download_dir = "/tmp/pdfs"
+        self.feedback_file = "categorization_feedback.json"
+        self.processed_docs_file = "processed_documents.json"
+        os.makedirs(self.download_dir, exist_ok=True)
         
-        # Configuración de AWS con bucket fijo
+        # Cargar documentos ya procesados
+        self.processed_docs = self.load_processed_docs()
+        
+        # Configurar Chrome
+        chrome_options = Options()
+        chrome_options.add_argument('--headless')
+        chrome_options.add_argument('--no-sandbox')
+        chrome_options.add_experimental_option(
+            'prefs',
+            {
+                'download.default_directory': self.download_dir,
+                'download.prompt_for_download': False,
+                'plugins.always_open_pdf_externally': True
+            }
+        )
+        
+        service = Service(ChromeDriverManager(chrome_type=ChromeType.CHROMIUM).install())
+        self.driver = webdriver.Chrome(service=service, options=chrome_options)
+        self.driver.implicitly_wait(10)
+        
+        # Cargar retroalimentación existente
+        self.feedback_data = self.load_feedback_data()
+        
+        # Contador para IDs únicos
+        self.id_counter = int(datetime.now().timestamp())
+
+    def load_feedback_data(self):
+        """Cargar datos de retroalimentación de categorización"""
         try:
-            # Nombre fijo del bucket - NO CAMBIAR
-            self.bucket_name = 'clasificador-docs-principal'  # Bucket definido en Terraform
-            aws_access_key = os.getenv('AWS_ACCESS_KEY_ID')
-            aws_secret_key = os.getenv('AWS_SECRET_ACCESS_KEY')
-            aws_region = os.getenv('AWS_DEFAULT_REGION', 'us-east-2')
-            
-            if not all([aws_access_key, aws_secret_key]):
-                raise ValueError("Faltan credenciales de AWS")
-            
-            # Inicializar cliente de S3
-            self.s3_client = boto3.client(
-                's3',
-                aws_access_key_id=aws_access_key,
-                aws_secret_access_key=aws_secret_key,
-                region_name=aws_region
+            # Intentar obtener del bucket S3
+            response = self.s3_client.get_object(
+                Bucket=self.bucket_name,
+                Key=f"feedback/{self.feedback_file}"
             )
-            
-            # Verificar acceso al bucket
-            self.s3_client.head_bucket(Bucket=self.bucket_name)
-            logger.info(f"Conexión exitosa al bucket de S3: {self.bucket_name}")
-                
+            return json.loads(response['Body'].read().decode('utf-8'))
+        except:
+            # Si no existe, crear estructura inicial
+            return {
+                "categorias_no_identificadas": [],
+                "sugerencias_mejora": {},
+                "estadisticas": {
+                    "total_documentos": 0,
+                    "documentos_sin_categoria": 0,
+                    "categorias_mas_comunes": {}
+                }
+            }
+
+    def save_feedback_data(self):
+        """Guardar datos de retroalimentación en S3"""
+        try:
+            self.s3_client.put_object(
+                Bucket=self.bucket_name,
+                Key=f"feedback/{self.feedback_file}",
+                Body=json.dumps(self.feedback_data, indent=2, ensure_ascii=False)
+            )
+            logger.info("Datos de retroalimentación guardados exitosamente")
         except Exception as e:
-            logger.error(f"Error configurando AWS: {str(e)}")
-            raise
-            
-        self.setup_driver()
+            logger.error(f"Error guardando datos de retroalimentación: {str(e)}")
+
+    def generate_unique_id(self, tipo_norma, nro_norma):
+        """Genera un ID único para cada documento"""
+        self.id_counter += 1
+        base = f"{tipo_norma}_{nro_norma}".replace('/', '_').replace(' ', '_')
+        return f"{base}_{self.id_counter}"
 
     def setup_driver(self):
         """Configura el driver de Selenium"""
@@ -254,8 +296,8 @@ class NormasActualizadasScraper:
                 logger.error("No se pudo guardar el screenshot")
             return False
 
-    def categorize_document(self, titulo, materia):
-        """Categoriza un documento basado en su título y materia"""
+    def categorize_document(self, titulo, materia, texto_completo):
+        """Categoriza un documento basado en su título, materia y texto completo"""
         categorias = {
             'CONSTITUCIONAL': {
                 'keywords': ['constitución', 'constitucional', 'derechos fundamentales', 'garantías', 'reforma'],
@@ -348,7 +390,7 @@ class NormasActualizadasScraper:
             }
         }
 
-        texto_completo = f"{titulo.lower()} {materia.lower()}"
+        texto_completo = f"{titulo.lower()} {materia.lower()} {texto_completo}" if texto_completo else f"{titulo.lower()} {materia.lower()}"
         resultado = {
             'categorias': [],
             'subcategorias': [],
@@ -380,6 +422,51 @@ class NormasActualizadasScraper:
 
         return resultado
 
+    def load_processed_docs(self):
+        """Cargar registro de documentos procesados"""
+        try:
+            response = self.s3_client.get_object(
+                Bucket=self.bucket_name,
+                Key=f"control/{self.processed_docs_file}"
+            )
+            return json.loads(response['Body'].read().decode('utf-8'))
+        except:
+            return {
+                "documentos": {},
+                "ultima_actualizacion": datetime.now().isoformat()
+            }
+
+    def save_processed_docs(self):
+        """Guardar registro de documentos procesados"""
+        try:
+            self.s3_client.put_object(
+                Bucket=self.bucket_name,
+                Key=f"control/{self.processed_docs_file}",
+                Body=json.dumps(self.processed_docs, indent=2, ensure_ascii=False),
+                ContentType='application/json'
+            )
+            logger.info("Registro de documentos procesados actualizado")
+        except Exception as e:
+            logger.error(f"Error guardando registro de documentos: {str(e)}")
+
+    def check_document_exists(self, id_norma: str, titulo: str) -> bool:
+        """Verifica si un documento ya existe y está procesado"""
+        doc_id = f"{id_norma}_{self.normalize_title(titulo)}"
+        return doc_id in self.processed_docs["documentos"]
+
+    def normalize_title(self, titulo: str) -> str:
+        """Normaliza el título para usar como parte del ID"""
+        return re.sub(r'[^\w]', '_', titulo.lower())
+
+    def register_processed_document(self, id_norma: str, titulo: str, metadata: dict):
+        """Registra un documento como procesado"""
+        doc_id = f"{id_norma}_{self.normalize_title(titulo)}"
+        self.processed_docs["documentos"][doc_id] = {
+            "fecha_procesamiento": datetime.now().isoformat(),
+            "metadata": metadata
+        }
+        self.processed_docs["ultima_actualizacion"] = datetime.now().isoformat()
+
     def extract_document_info(self, row):
         """Extrae información de una fila de la tabla"""
         try:
@@ -389,85 +476,73 @@ class NormasActualizadasScraper:
                 nro_norma = cells[1].text.strip()
                 materia = cells[2].text.strip()
                 
-                # Obtener texto completo si está disponible
-                texto_completo = None
-                try:
-                    # Intentar obtener el texto completo del PDF
-                    texto_completo = self.extract_pdf_text(row)
-                except Exception as e:
-                    logger.warning(f"No se pudo extraer el texto completo: {str(e)}")
+                # Verificar si el documento ya existe
+                if self.check_document_exists(nro_norma, titulo):
+                    logger.info(f"Documento ya procesado: {titulo}")
+                    return None
                 
-                # Obtener categorización
-                categorizacion = self.categorize_document(titulo, materia)
-                
-                # Generar ID único basado en tipo de norma y número
+                # Generar ID único
                 tipo_norma = self.detect_tipo_norma(titulo)
-                id_norma = self.generate_id(tipo_norma, nro_norma)
+                id_norma = self.generate_unique_id(tipo_norma, nro_norma)
                 
-                # Extraer año
-                año = None
-                match = re.search(r'\b(19|20)\d{2}\b', nro_norma)
-                if match:
-                    año = int(match.group())
+                # Descargar PDF y subir a S3
+                pdf_path = None
+                if self.click_download(row):
+                    pdf_path = self.wait_for_download()
+                    if pdf_path:
+                        s3_key = f"pdfs/{id_norma}.pdf"
+                        
+                        # Verificar si el archivo ya existe en S3
+                        try:
+                            self.s3_client.head_object(Bucket=self.bucket_name, Key=s3_key)
+                            logger.info(f"PDF ya existe en S3: {s3_key}")
+                            os.remove(pdf_path)
+                        except:
+                            # Si no existe, subir el archivo
+                            self.s3_client.upload_file(pdf_path, self.bucket_name, s3_key)
+                            logger.info(f"PDF subido a S3: {s3_key}")
+                            os.remove(pdf_path)
                 
-                # Estructura completa con todos los campos
-                return {
-                    # Campos de identificación
+                # Obtener texto completo del PDF
+                texto_completo = None
+                if pdf_path:
+                    texto_completo = self.extract_pdf_text(pdf_path)
+                
+                # Categorización y retroalimentación
+                categorizacion = self.categorize_document(titulo, materia, texto_completo)
+                
+                # Crear metadata
+                metadata = {
                     'id': id_norma,
                     'titulo': titulo,
                     'numero': nro_norma,
                     'materia': materia,
-                    'año': año,
-                    
-                    # Campos de categorización jerárquica
-                    'categoria_principal': categorizacion['categorias'][0] if categorizacion['categorias'] else 'OTROS',
-                    'subcategoria_1': categorizacion['subcategorias'][0] if categorizacion['subcategorias'] else 'GENERAL',
-                    'subcategoria_2': categorizacion['subcategorias'][1] if len(categorizacion['subcategorias']) > 1 else None,
-                    'subcategoria_3': categorizacion['subcategorias'][2] if len(categorizacion['subcategorias']) > 2 else None,
-                    
-                    # Campos de contenido
-                    'texto_completo': texto_completo,  # Contenido completo del documento
-                    'texto_resumen': self.extract_resumen(titulo, materia),
-                    'palabras_clave': categorizacion['keywords_encontradas'],
-                    
-                    # Campos de origen y fuente
                     'tipo_norma': tipo_norma,
-                    'origen': 'El Peruano - Normas Actualizadas',
-                    'url_origen': self.driver.current_url,
-                    'nombre_archivo': f"{tipo_norma}_{nro_norma.replace('/', '_')}.pdf" if tipo_norma and nro_norma else None,
-                    
-                    # Campos de metadata adicional
-                    'fecha_scraping': datetime.now().strftime('%Y-%m-%d'),
-                    'relevancia_categorias': categorizacion['relevancia'],
-                    
-                    # Campo de texto enriquecido para IA
-                    'texto_contexto': self.generate_texto_contexto(titulo, tipo_norma, año, materia, categorizacion)
+                    'categorias': categorizacion['categorias'],
+                    'subcategorias': categorizacion['subcategorias'],
+                    'texto_completo': texto_completo,
+                    'pdf_s3_key': s3_key if pdf_path else None,
+                    'fecha_scraping': datetime.now().isoformat(),
+                    'metadata': {
+                        'relevancia': categorizacion['relevancia'],
+                        'keywords': categorizacion['keywords_encontradas'],
+                        'grupo_asignado': self.determinar_grupo(texto_completo) if texto_completo else None
+                    }
                 }
+                
+                # Registrar documento como procesado
+                self.register_processed_document(nro_norma, titulo, metadata)
+                
+                return metadata
             return None
         except Exception as e:
             logger.error(f"Error extrayendo información: {str(e)}")
             return None
 
-    def extract_pdf_text(self, row):
+    def extract_pdf_text(self, pdf_path):
         """Extrae el texto completo del PDF"""
         try:
-            # Primero intentamos descargar el PDF
-            if not self.click_download(row):
-                return None
-            
-            # Esperar a que se complete la descarga
-            time.sleep(3)
-            
-            # Buscar el archivo PDF más reciente en la carpeta de descargas
-            downloads_path = os.path.expanduser("~/Downloads")
-            list_of_files = glob.glob(os.path.join(downloads_path, '*.pdf'))
-            if not list_of_files:
-                return None
-                
-            latest_file = max(list_of_files, key=os.path.getctime)
-            
-            # Extraer texto del PDF
-            with open(latest_file, 'rb') as file:
+            with open(pdf_path, 'rb') as file:
                 reader = PyPDF2.PdfReader(file)
                 text = ""
                 for page in reader.pages:
@@ -475,9 +550,6 @@ class NormasActualizadasScraper:
             
             # Limpiar el texto
             text = text.strip()
-            
-            # Eliminar el archivo temporal
-            os.remove(latest_file)
             
             return text
             
@@ -501,28 +573,37 @@ class NormasActualizadasScraper:
                 return tipo
         return 'OTROS'
 
-    def generate_id(self, tipo_norma, nro_norma):
-        """Genera un ID único para la norma"""
-        # Limpiar número de norma
-        nro_limpio = re.sub(r'[^\w]', '', nro_norma) if nro_norma else ''
-        # Generar ID único
-        return f"{tipo_norma}_{nro_limpio}_{datetime.now().strftime('%Y%m')}"
+    def wait_for_download(self):
+        """Espera y retorna la ruta del último archivo descargado"""
+        max_wait = 30
+        start_time = time.time()
+        while time.time() - start_time < max_wait:
+            files = glob.glob(os.path.join(self.download_dir, '*.pdf'))
+            if files:
+                return max(files, key=os.path.getctime)
+            time.sleep(1)
+        return None
 
-    def extract_resumen(self, titulo, materia):
-        """Extrae un resumen basado en título y materia"""
-        return f"{titulo}. {materia}".strip()
-
-    def generate_texto_contexto(self, titulo, tipo_norma, año, materia, categorizacion):
-        """Genera texto contextual enriquecido para IA"""
-        return f"""
-            Título: {titulo}
-            Tipo de Norma: {tipo_norma if tipo_norma else 'No especificado'}
-            Año: {año if año else 'No especificado'}
-            Materia: {materia}
-            Categorías Principales: {', '.join(categorizacion['categorias'])}
-            Subcategorías: {', '.join(categorizacion['subcategorias'])}
-            Palabras Clave: {', '.join(categorizacion['keywords_encontradas'])}
-        """.strip()
+    def determinar_grupo(self, texto):
+        """Determina el grupo al que pertenece el texto basado en su contenido"""
+        palabras_clave = {
+            'GRUPO_A': ['derecho constitucional', 'derechos fundamentales', 'garantías constitucionales'],
+            'GRUPO_B': ['derecho administrativo', 'procedimiento administrativo', 'gestión pública'],
+            'GRUPO_C': ['derecho penal', 'proceso penal', 'delitos']
+        }
+        
+        texto = texto.lower()
+        puntuaciones = {grupo: 0 for grupo in palabras_clave}
+        
+        for grupo, keywords in palabras_clave.items():
+            for keyword in keywords:
+                if keyword in texto:
+                    puntuaciones[grupo] += 1
+        
+        if not any(puntuaciones.values()):
+            return 'NO_CLASIFICADO'
+        
+        return max(puntuaciones.items(), key=lambda x: x[1])[0]
 
     def click_download(self, row):
         """Hace clic en el botón de descarga y espera a que se complete"""
@@ -601,57 +682,6 @@ class NormasActualizadasScraper:
         except Exception as e:
             logger.error(f"Error haciendo clic en descarga: {str(e)}")
             return False
-
-    def save_to_s3(self, data, key_prefix):
-        """Guarda datos en S3 y genera un enlace público temporal"""
-        try:
-            # Generar nombre del archivo con timestamp
-            key = f"{key_prefix}/{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
-            
-            logger.info(f"Guardando datos en bucket {self.bucket_name} con key: {key}")
-            
-            # Guardar en formato JSON legible
-            self.s3_client.put_object(
-                Bucket=self.bucket_name,
-                Key=key,
-                Body=json.dumps(data, ensure_ascii=False, indent=2),
-                ContentType='application/json'
-            )
-            
-            # Verificar que el archivo se guardó correctamente
-            try:
-                self.s3_client.head_object(Bucket=self.bucket_name, Key=key)
-                logger.info(f"Archivo guardado exitosamente en S3: {key}")
-            except Exception as e:
-                logger.error(f"Error verificando archivo en S3: {str(e)}")
-                raise
-            
-            # Generar URL firmada para descarga (válida por 7 días)
-            url = self.s3_client.generate_presigned_url(
-                'get_object',
-                Params={
-                    'Bucket': self.bucket_name,
-                    'Key': key
-                },
-                ExpiresIn=7*24*3600  # 7 días en segundos
-            )
-            
-            logger.info(f"Datos guardados en S3: {key}")
-            logger.info(f"Enlace de descarga (válido por 7 días): {url}")
-            logger.info(f"Para acceder a los datos, use este enlace hasta {(datetime.now() + timedelta(days=7)).strftime('%Y-%m-%d %H:%M:%S')}")
-            
-            # Guardar información del último archivo para verificación
-            with open('last_metadata.txt', 'w') as f:
-                f.write(f"bucket={self.bucket_name}\n")
-                f.write(f"key={key}\n")
-                f.write(f"timestamp={datetime.now().isoformat()}\n")
-            
-            return True
-                
-        except Exception as e:
-            logger.error(f"Error guardando en S3: {str(e)}")
-            logger.error(f"Bucket: {self.bucket_name}, Key: {key if 'key' in locals() else 'no generada'}")
-            raise
 
     def scrape(self):
         """Proceso principal de scraping"""
@@ -734,6 +764,13 @@ class NormasActualizadasScraper:
                 
                 self.save_to_s3(metadata, 'metadata')
                 logger.info(f"Metadata guardada para {total_docs} documentos")
+
+                # Al finalizar, guardar retroalimentación
+                self.save_feedback_data()
+
+                # Guardar registros
+                self.save_processed_docs()
+
                 return total_docs
             else:
                 logger.error("No se encontraron documentos para procesar")
