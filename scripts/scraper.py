@@ -1,3 +1,20 @@
+# NOTA IMPORTANTE:
+# =================
+# Este script está diseñado específicamente para ejecutarse en un entorno de GitHub Actions.
+# NO está diseñado para ejecución local. Las configuraciones, rutas y dependencias están
+# optimizadas para el entorno de CI/CD en la nube.
+#
+# Requisitos específicos del entorno:
+# - Sistema operativo: Linux (entorno de GitHub Actions)
+# - Chrome/Chromium instalado en el sistema
+# - Variables de entorno configuradas en GitHub Secrets:
+#   * AWS_ACCESS_KEY_ID
+#   * AWS_SECRET_ACCESS_KEY
+#   * BUCKET_NAME
+#
+# Para pruebas, por favor utilizar el flujo de GitHub Actions configurado.
+# ==================
+
 import os
 import json
 import time
@@ -495,16 +512,19 @@ class NormasActualizadasScraper:
     def click_download(self, row):
         """Hace clic en el botón de descarga y espera a que se complete"""
         try:
-            # Buscar el botón de descarga con la clase correcta
-            download_button = row.find_element(By.CSS_SELECTOR, 'input.btn-primary[value="Descargar"]')
+            # Buscar el botón de descarga usando XPath
+            download_button = row.find_element(By.XPATH, './/input[@type="button" and @value="Descargar"]')
             
             if download_button and download_button.is_displayed():
-                # Hacer scroll al botón
+                # Hacer scroll al botón y esperar
                 self.driver.execute_script("arguments[0].scrollIntoView(true);", download_button)
-                time.sleep(1)
+                time.sleep(2)
                 
-                # Intentar click
-                download_button.click()
+                # Asegurar que el botón sea clickeable
+                self.wait.until(EC.element_to_be_clickable((By.XPATH, './/input[@type="button" and @value="Descargar"]')))
+                
+                # Intentar click con JavaScript para evitar problemas de intercepción
+                self.driver.execute_script("arguments[0].click();", download_button)
                 
                 logger.info("Botón de descarga clickeado")
                 time.sleep(2)
