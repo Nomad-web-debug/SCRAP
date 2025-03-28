@@ -5,6 +5,13 @@ terraform {
       version = "~> 5.0"
     }
   }
+  
+  # Configurar el backend para mantener el estado en S3
+  backend "s3" {
+    bucket = "terraform-state-scraper"
+    key    = "prod/terraform.tfstate"
+    region = "us-east-2"
+  }
 }
 
 provider "aws" {
