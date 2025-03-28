@@ -31,11 +31,11 @@ logger = logging.getLogger(__name__)
 class NormasActualizadasScraper:
     def __init__(self):
         self.s3_client = boto3.client('s3')
-        self.bucket_name = os.getenv('S3_BUCKET')
+        self.bucket_name = os.getenv('BUCKET_NAME')
         self.base_url = "https://diariooficial.elperuano.pe/normas/normasactualizadas"
         self.backup_url = "https://diariooficial.elperuano.pe/normas"
         
-        # Usar /tmp para entornos cloud (Lambda, EC2, etc)
+        # Asegurar que usamos directorios temporales en la nube
         self.download_dir = "/tmp/pdfs"
         self.screenshot_dir = "/tmp/screenshots"
         self.feedback_file = "categorization_feedback.json"
@@ -43,7 +43,17 @@ class NormasActualizadasScraper:
         
         # Crear directorios necesarios
         for directory in [self.download_dir, self.screenshot_dir]:
-            os.makedirs(directory, exist_ok=True)
+            if os.path.exists(directory):
+                # Limpiar directorio si existe
+                for file in os.listdir(directory):
+                    file_path = os.path.join(directory, file)
+                    try:
+                        if os.path.isfile(file_path):
+                            os.unlink(file_path)
+                    except Exception as e:
+                        logger.error(f"Error limpiando archivo {file_path}: {e}")
+            else:
+                os.makedirs(directory, exist_ok=True)
         
         # Cargar documentos ya procesados
         self.processed_docs = self.load_processed_docs()
@@ -101,25 +111,24 @@ class NormasActualizadasScraper:
         try:
             chrome_options = Options()
             
-            # Configuraciones específicas para entorno cloud
-            chrome_options.add_argument('--headless')  # Usar headless en lugar de --headless=new
+            # Configuraciones esenciales para la nube
+            chrome_options.add_argument('--headless')
             chrome_options.add_argument('--no-sandbox')
             chrome_options.add_argument('--disable-dev-shm-usage')
             chrome_options.add_argument('--disable-gpu')
-            chrome_options.add_argument('--remote-debugging-port=9222')  # Agregar puerto para debugging
             chrome_options.add_argument('--window-size=1920,1080')
+            
+            # Configuraciones para estabilidad
             chrome_options.add_argument('--disable-extensions')
             chrome_options.add_argument('--disable-infobars')
             chrome_options.add_argument('--disable-notifications')
             chrome_options.add_argument('--enable-automation')
-            chrome_options.add_argument('--log-level=3')  # Minimizar logs
+            chrome_options.add_argument('--log-level=3')
             chrome_options.add_argument('--disable-blink-features=AutomationControlled')
+            chrome_options.add_argument('--ignore-certificate-errors')
+            chrome_options.add_argument('--ignore-ssl-errors')
             
-            # Configuraciones adicionales para estabilidad
-            chrome_options.add_experimental_option('excludeSwitches', ['enable-logging'])
-            chrome_options.add_experimental_option('useAutomationExtension', False)
-            
-            # Configurar directorio de descargas y preferencias
+            # Configuraciones para descargas
             prefs = {
                 'download.default_directory': self.download_dir,
                 'download.prompt_for_download': False,
@@ -130,11 +139,12 @@ class NormasActualizadasScraper:
                 'profile.default_content_setting_values.automatic_downloads': 1
             }
             chrome_options.add_experimental_option('prefs', prefs)
+            chrome_options.add_experimental_option('excludeSwitches', ['enable-logging'])
             
-            # Configurar el servicio de ChromeDriver con log silencioso
+            # Configurar el servicio sin ChromeType específico
             service = Service(
                 ChromeDriverManager().install(),
-                log_output=os.path.devnull  # Silenciar logs del servicio
+                log_output=os.path.devnull
             )
             
             self.driver = webdriver.Chrome(
@@ -142,12 +152,12 @@ class NormasActualizadasScraper:
                 options=chrome_options
             )
             
-            # Configurar timeouts más largos para estabilidad
-            self.driver.set_page_load_timeout(30)
-            self.driver.implicitly_wait(10)
-            self.wait = WebDriverWait(self.driver, 20)
+            # Configurar timeouts más largos para entorno cloud
+            self.driver.set_page_load_timeout(60)
+            self.driver.implicitly_wait(20)
+            self.wait = WebDriverWait(self.driver, 30)
             
-            logger.info("Driver de Selenium configurado correctamente")
+            logger.info("Driver de Selenium configurado correctamente para entorno cloud")
             
         except Exception as e:
             logger.error(f"Error configurando el driver: {str(e)}")
@@ -528,75 +538,27 @@ class NormasActualizadasScraper:
     def click_download(self, row):
         """Hace clic en el botón de descarga y espera a que se complete"""
         try:
-            # Lista de selectores específicos para los botones de la página
-            download_selectors = [
-                'input[type="button"][value="Descargar"]',
-                'input.btn-primary[value="Descargar"]',
-                '.btn-primary[value="Descargar"]',
-                '//input[@type="button" and @value="Descargar"]',
-                '//input[@class="btn-primary" and @value="Descargar"]'
-            ]
+            # Esperar a que la página esté completamente cargada
+            time.sleep(2)
             
-            # Intentar cada selector
-            for selector in download_selectors:
-                try:
-                    if selector.startswith('//'):
-                        download_button = row.find_element(By.XPATH, selector)
-                    else:
-                        download_button = row.find_element(By.CSS_SELECTOR, selector)
-                        
-                    if download_button and download_button.is_displayed():
-                        # Intentar hacer scroll al botón
-                        self.driver.execute_script("arguments[0].scrollIntoView(true);", download_button)
-                        time.sleep(1)  # Esperar a que termine el scroll
-                        
-                        # Intentar click con JavaScript si el click normal falla
-                        try:
-                            download_button.click()
-                        except:
-                            self.driver.execute_script("arguments[0].click();", download_button)
-                            
-                        logger.info(f"Botón de descarga encontrado usando selector: {selector}")
-                        time.sleep(2)  # Esperar a que inicie la descarga
-                        return True
-                except:
-                    continue
+            # Buscar el botón de descarga con espera explícita
+            download_button = WebDriverWait(row, 10).until(
+                EC.presence_of_element_located((By.CSS_SELECTOR, 'input[type="button"][value="Descargar"]'))
+            )
             
-            # Si no funcionó con los selectores anteriores, intentar buscar por el texto del botón
-            try:
-                buttons = row.find_elements(By.TAG_NAME, "input")
-                for button in buttons:
-                    if button.get_attribute("value") == "Descargar":
-                        self.driver.execute_script("arguments[0].scrollIntoView(true);", button)
-                        time.sleep(1)
-                        try:
-                            button.click()
-                        except:
-                            self.driver.execute_script("arguments[0].click();", button)
-                        logger.info("Botón de descarga encontrado por texto")
-                        time.sleep(2)
-                        return True
-            except:
-                pass
-                    
-            # Si llegamos aquí, no se encontró el botón
+            if download_button and download_button.is_displayed():
+                # Hacer scroll al botón
+                self.driver.execute_script("arguments[0].scrollIntoView(true);", download_button)
+                time.sleep(1)
+                
+                # Intentar click con JavaScript
+                self.driver.execute_script("arguments[0].click();", download_button)
+                
+                logger.info("Botón de descarga clickeado")
+                time.sleep(3)  # Esperar más tiempo en la nube
+                return True
+            
             logger.error("No se pudo encontrar el botón de descarga")
-            
-            # Tomar screenshot y HTML para diagnóstico
-            try:
-                timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-                screenshot_path = f"/tmp/error_download_{timestamp}.png"
-                html_path = f"/tmp/error_download_{timestamp}.html"
-                
-                self.driver.save_screenshot(screenshot_path)
-                with open(html_path, 'w', encoding='utf-8') as f:
-                    f.write(row.get_attribute('outerHTML'))
-                    
-                logger.info(f"Screenshot guardado en: {screenshot_path}")
-                logger.info(f"HTML guardado en: {html_path}")
-            except:
-                logger.error("No se pudo guardar el diagnóstico")
-                
             return False
             
         except Exception as e:
@@ -638,57 +600,41 @@ class NormasActualizadasScraper:
                 if doc_info:
                     documents.append(doc_info)
                     logger.info(f"Documento {idx} procesado: {doc_info['titulo'][:50]}...")
-                    
-                    if self.click_download(row):
-                        logger.info(f"Descarga iniciada para documento {idx}")
-                    
                     time.sleep(2)
 
             # Guardar metadata con estructura completa
             total_docs = len(documents)
             if documents:
-                # Recolectar todas las categorías y subcategorías
-                todas_categorias = []
-                todas_subcategorias = []
-                for doc in documents:
-                    if doc['categoria_principal'] != 'OTROS':
-                        todas_categorias.append(doc['categoria_principal'])
-                    if doc['subcategoria_1'] != 'GENERAL':
-                        todas_subcategorias.append(doc['subcategoria_1'])
-                    if doc['subcategoria_2']:
-                        todas_subcategorias.append(doc['subcategoria_2'])
-                    if doc['subcategoria_3']:
-                        todas_subcategorias.append(doc['subcategoria_3'])
-
                 metadata = {
                     'documentos': documents,
                     'total': total_docs,
                     'fecha_scraping': datetime.now().strftime('%Y-%m-%d'),
                     'url_origen': self.driver.current_url,
                     'estadisticas': {
-                        'categorias_encontradas': list(set(todas_categorias)),
-                        'subcategorias_encontradas': list(set(todas_subcategorias)),
-                        'distribucion_años': {},
+                        'categorias_encontradas': list(set(doc['categorias'][0] for doc in documents if doc['categorias'])),
                         'distribucion_tipos': {}
                     }
                 }
                 
-                # Calcular distribución de años y tipos
+                # Calcular distribución de tipos
                 for doc in documents:
-                    if doc['año']:
-                        metadata['estadisticas']['distribucion_años'][str(doc['año'])] = \
-                            metadata['estadisticas']['distribucion_años'].get(str(doc['año']), 0) + 1
                     if doc['tipo_norma']:
                         metadata['estadisticas']['distribucion_tipos'][doc['tipo_norma']] = \
                             metadata['estadisticas']['distribucion_tipos'].get(doc['tipo_norma'], 0) + 1
                 
-                self.save_to_s3(metadata, 'metadata')
-                logger.info(f"Metadata guardada para {total_docs} documentos")
+                # Guardar metadata en S3
+                timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+                metadata_key = f"metadata/scraping_{timestamp}.json"
+                self.s3_client.put_object(
+                    Bucket=self.bucket_name,
+                    Key=metadata_key,
+                    Body=json.dumps(metadata, ensure_ascii=False, indent=2),
+                    ContentType='application/json'
+                )
+                logger.info(f"Metadata guardada en S3: {metadata_key}")
 
-                # Al finalizar, guardar retroalimentación
+                # Guardar retroalimentación y registro de procesados
                 self.save_feedback_data()
-
-                # Guardar registros
                 self.save_processed_docs()
 
                 return total_docs
