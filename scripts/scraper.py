@@ -19,6 +19,7 @@ import glob
 import PyPDF2
 import re  # Agregando importación de re
 from dotenv import load_dotenv
+from selenium.common.exceptions import TimeoutException, NoSuchElementException
 
 # Cargar variables de entorno desde .env
 load_dotenv()
@@ -34,15 +35,15 @@ class NormasActualizadasScraper:
         
         # Configuración de AWS
         try:
-            self.bucket_name = os.getenv('BUCKET_NAME')
+            self.bucket_name = os.getenv('BUCKET_NAME', 'clasificador-docs-p2m9n0ly')
             aws_access_key = os.getenv('AWS_ACCESS_KEY_ID')
             aws_secret_key = os.getenv('AWS_SECRET_ACCESS_KEY')
             aws_region = os.getenv('AWS_DEFAULT_REGION', 'us-east-1')
             
-            if not all([self.bucket_name, aws_access_key, aws_secret_key]):
-                raise ValueError("Faltan variables de entorno de AWS")
+            if not all([aws_access_key, aws_secret_key]):
+                raise ValueError("Faltan credenciales de AWS")
             
-            # Inicializar cliente de S3 con credenciales explícitas
+            # Inicializar cliente de S3
             self.s3_client = boto3.client(
                 's3',
                 aws_access_key_id=aws_access_key,
@@ -734,8 +735,8 @@ if __name__ == '__main__':
         total_docs = scraper.scrape()
         print(f"Total de documentos procesados: {total_docs}")
         if total_docs == 0:
-            exit(1)  # Salir con error si no se procesaron documentos
-        exit(0)  # Salir exitosamente si se procesaron documentos
+            exit(1)
+        exit(0)
     except Exception as e:
         logger.error(f"Error en la ejecución principal: {str(e)}")
         exit(1) 
