@@ -1,0 +1,172 @@
+name: Despliegue y Procesamiento
+
+on:
+  workflow_dispatch:
+    inputs:
+      fase:
+        description: 'Fase a ejecutar (deploy, scrape, process, all)'
+        required: true
+        default: 'all'
+        type: choice
+        options:
+        - deploy
+        - scrape
+        - process
+        - all
+
+env:
+  AWS_REGION: us-east-2
+  ANTHROPIC_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+  BUCKET_NAME: "clasificador-docs-principal"
+
+jobs:
+  deploy-and-process:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      
+      # === FASE DE DESPLIEGUE ===
+      - name: Configurar Terraform
+        if: github.event.inputs.fase == 'deploy' || github.event.inputs.fase == 'all'
+        uses: hashicorp/setup-terraform@v2
+        
+      - name: Configurar AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-2
+          
+      - name: Terraform Init y Apply
+        if: github.event.inputs.fase == 'deploy' || github.event.inputs.fase == 'all'
+        run: |
+          cd infrastructure
+          terraform init \
+            -backend-config="bucket=terraform-state-scraper-ia" \
+            -backend-config="region=us-east-2"
+          terraform apply -auto-approve
+      
+      # Paso 2: Esperar a que el bucket esté disponible
+      - name: Esperar propagación de S3
+        if: github.event.inputs.fase == 'deploy' || github.event.inputs.fase == 'all'
+        run: sleep 30  # Esperar 30 segundos
+      
+      # === FASE DE SCRAPING ===
+      - name: Configurar Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+          
+      - name: Instalar dependencias
+        if: github.event.inputs.fase == 'scrape' || github.event.inputs.fase == 'all'
+        run: |
+          # Instalar dependencias de Python
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install anthropic boto3 PyPDF2 beautifulsoup4 requests selenium webdriver_manager
+          
+          # Instalar Chromium y ChromeDriver
+          sudo apt-get update
+          sudo apt-get install -y chromium chromium-driver xvfb
+          
+          # Configurar display virtual
+          export DISPLAY=:99
+          sudo Xvfb :99 -screen 0 1280x1024x24 > /dev/null 2>&1 &
+
+      - name: Verificar API de Claude
+        if: github.event.inputs.fase == 'scrape' || github.event.inputs.fase == 'all'
+        run: |
+          python -c "
+          import anthropic
+          import os
+          import sys
+          
+          try:
+              client = anthropic.Client(api_key=os.getenv('ANTHROPIC_API_KEY'))
+              response = client.messages.create(
+                  model='claude-3-sonnet-20240229',
+                  max_tokens=10,
+                  messages=[{
+                      'role': 'user',
+                      'content': 'Di hola'
+                  }]
+              )
+              print('API de Claude funcionando correctamente')
+          except Exception as e:
+              print(f'Error al verificar API de Claude: {str(e)}')
+              sys.exit(1)
+          "
+          
+      - name: Ejecutar Scraper
+        if: github.event.inputs.fase == 'scrape' || github.event.inputs.fase == 'all'
+        run: python scripts/scraper.py
+        env:
+          BUCKET_NAME: ${{ env.BUCKET_NAME }}
+          AWS_REGION: us-east-2
+
+      # === FASE DE PROCESAMIENTO ===
+      - name: Procesar Documentos
+        if: github.event.inputs.fase == 'process' || github.event.inputs.fase == 'all'
+        env:
+          ANTHROPIC_API_KEY: ${{ env.ANTHROPIC_API_KEY }}
+        run: |
+          echo "Verificando archivos antes del procesamiento..."
+          python -c "
+          import boto3
+          import os
+          
+          s3 = boto3.client('s3')
+          bucket = os.getenv('BUCKET_NAME')
+          
+          # Verificar archivos raw
+          raw = s3.list_objects_v2(Bucket=bucket, Prefix='raw/')
+          if 'Contents' not in raw or len(raw['Contents']) == 0:
+              print('No hay archivos para procesar')
+              exit(1)
+              
+          print(f'Encontrados {len(raw["Contents"])} archivos para procesar')
+          "
+          
+          echo "Iniciando procesamiento..."
+          python scripts/processor.py
+
+      # === VERIFICACIÓN FINAL ===
+      - name: Verificar Estado
+        if: always()
+        run: |
+          python -c "
+          import boto3
+          import os
+          import json
+          from datetime import datetime
+          
+          def save_status(bucket, status):
+              try:
+                  s3 = boto3.client('s3')
+                  status_obj = {
+                      'timestamp': datetime.now().isoformat(),
+                      'status': status,
+                      'bucket': bucket
+                  }
+                  s3.put_object(
+                      Bucket=bucket,
+                      Key='status/last_run.json',
+                      Body=json.dumps(status_obj),
+                      ContentType='application/json'
+                  )
+              except Exception as e:
+                  print(f'Error guardando estado: {str(e)}')
+          
+          bucket = os.getenv('BUCKET_NAME')
+          print(f'Verificando bucket: {bucket}')
+          
+          try:
+              s3 = boto3.client('s3')
+              s3.head_bucket(Bucket=bucket)
+              save_status(bucket, 'success')
+              print('Verificación completada exitosamente')
+          except Exception as e:
+              print(f'Error en la verificación: {str(e)}')
+              save_status(bucket, 'error')
+              exit(1)
+          " 
