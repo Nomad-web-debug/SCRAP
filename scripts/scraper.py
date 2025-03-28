@@ -138,7 +138,7 @@ class NormasActualizadasScraper:
             raise
 
     def wait_for_results(self):
-        """Espera a que los resultados se carguen"""
+        """Espera a que la página cargue y muestra los resultados"""
         try:
             logger.info("Esperando a que la página cargue...")
             
@@ -150,37 +150,36 @@ class NormasActualizadasScraper:
             # Dar tiempo para que la página se cargue completamente
             time.sleep(5)
             
-            # Buscar tabla de resultados
-            table = None
-            table_selectors = ["table", ".table", "#tablaResultados", "//table"]
-            
-            for selector in table_selectors:
-                try:
-                    if selector.startswith("//"):
-                        table = self.wait.until(
-                            EC.presence_of_element_located((By.XPATH, selector))
-                        )
-                    else:
-                        table = self.wait.until(
-                            EC.presence_of_element_located((By.CSS_SELECTOR, selector))
-                        )
-                    if table:
-                        logger.info(f"Tabla encontrada usando selector: {selector}")
-                        break
-                except:
-                    continue
-            
-            if not table:
-                logger.error("No se pudo encontrar la tabla de resultados")
+            # Buscar y hacer clic en el checkbox 'Ver Títulos'
+            logger.info("Buscando checkbox 'Ver Títulos'...")
+            try:
+                checkbox = self.driver.find_element(By.CSS_SELECTOR, 'input[type="checkbox"]')
+                if checkbox and not checkbox.is_selected():
+                    checkbox.click()
+                    logger.info("Checkbox 'Ver Títulos' marcado")
+                    time.sleep(2)  # Esperar a que se actualice la página
+            except NoSuchElementException:
+                logger.error("No se pudo encontrar el checkbox 'Ver Títulos'")
                 return False
             
-            # Verificar si hay filas en la tabla
-            rows = table.find_elements(By.TAG_NAME, "tr")
-            if len(rows) > 1:
-                logger.info(f"Se encontraron {len(rows)} filas en la tabla")
-                return True
-            else:
-                logger.warning("La tabla está vacía")
+            # Buscar tabla de resultados
+            logger.info("Buscando tabla de resultados...")
+            try:
+                table = self.wait.until(
+                    EC.presence_of_element_located((By.CSS_SELECTOR, "table"))
+                )
+                
+                # Verificar si hay filas en la tabla
+                rows = table.find_elements(By.TAG_NAME, "tr")
+                if len(rows) > 1:
+                    logger.info(f"Se encontraron {len(rows)} filas en la tabla")
+                    return True
+                else:
+                    logger.warning("La tabla está vacía")
+                    return False
+                    
+            except TimeoutException:
+                logger.error("No se pudo encontrar la tabla de resultados")
                 return False
                 
         except Exception as e:
