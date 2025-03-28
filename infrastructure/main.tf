@@ -8,7 +8,7 @@ terraform {
   
   # Configurar el backend para mantener el estado en S3
   backend "s3" {
-    bucket = "terraform-state-scraper"
+    bucket = "terraform-state-scraper-ia"
     key    = "prod/terraform.tfstate"
     region = "us-east-2"
   }
