@@ -24,6 +24,16 @@ resource "aws_s3_bucket" "documentos_bucket" {
   force_destroy = false
 }
 
+# Configurar acceso público al bucket
+resource "aws_s3_bucket_public_access_block" "documentos_access" {
+  bucket = aws_s3_bucket.documentos_bucket.id
+
+  block_public_acls       = false
+  block_public_policy     = false
+  ignore_public_acls      = false
+  restrict_public_buckets = false
+}
+
 # Configurar el bucket
 resource "aws_s3_bucket_versioning" "bucket_versioning" {
   bucket = aws_s3_bucket.documentos_bucket.id
@@ -35,13 +45,18 @@ resource "aws_s3_bucket_versioning" "bucket_versioning" {
 # Configurar el lifecycle del bucket
 resource "aws_s3_bucket_lifecycle_configuration" "bucket_lifecycle" {
   bucket = aws_s3_bucket.documentos_bucket.id
+  depends_on = [aws_s3_bucket_versioning.bucket_versioning]
 
   rule {
     id     = "archivos_temporales"
     status = "Enabled"
 
+    filter {
+      prefix = "temp/"
+    }
+
     expiration {
-      days = 30  # Los archivos temporales se eliminan después de 30 días
+      days = 30
     }
   }
 }
@@ -49,6 +64,7 @@ resource "aws_s3_bucket_lifecycle_configuration" "bucket_lifecycle" {
 # Política de acceso al bucket
 resource "aws_s3_bucket_policy" "bucket_policy" {
   bucket = aws_s3_bucket.documentos_bucket.id
+  depends_on = [aws_s3_bucket_public_access_block.documentos_access]
 
   policy = jsonencode({
     Version = "2012-10-17"
