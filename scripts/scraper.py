@@ -35,7 +35,7 @@ class NormasActualizadasScraper:
         self.base_url = "https://diariooficial.elperuano.pe/normas/normasactualizadas"
         self.backup_url = "https://diariooficial.elperuano.pe/normas"
         
-        # Asegurar que usamos directorios temporales en la nube
+        # Configurar directorios
         self.download_dir = "/tmp/pdfs"
         self.screenshot_dir = "/tmp/screenshots"
         self.feedback_file = "categorization_feedback.json"
@@ -44,7 +44,6 @@ class NormasActualizadasScraper:
         # Crear directorios necesarios
         for directory in [self.download_dir, self.screenshot_dir]:
             if os.path.exists(directory):
-                # Limpiar directorio si existe
                 for file in os.listdir(directory):
                     file_path = os.path.join(directory, file)
                     try:
@@ -55,11 +54,14 @@ class NormasActualizadasScraper:
             else:
                 os.makedirs(directory, exist_ok=True)
         
-        # Cargar documentos ya procesados
-        self.processed_docs = self.load_processed_docs()
-        
-        # Inicializar el driver y wait
+        # Inicializar el driver
         self.setup_driver()
+        
+        # Reiniciar registro de documentos procesados
+        self.processed_docs = {
+            "documentos": {},
+            "ultima_actualizacion": datetime.now().isoformat()
+        }
         
         # Cargar retroalimentación existente
         self.feedback_data = self.load_feedback_data()
@@ -107,57 +109,29 @@ class NormasActualizadasScraper:
         return f"{base}_{self.id_counter}"
 
     def setup_driver(self):
-        """Configura el driver de Selenium para entorno cloud"""
+        """Configura el driver de Selenium"""
         try:
             chrome_options = Options()
-            
-            # Configuraciones esenciales para la nube
             chrome_options.add_argument('--headless')
             chrome_options.add_argument('--no-sandbox')
             chrome_options.add_argument('--disable-dev-shm-usage')
             chrome_options.add_argument('--disable-gpu')
-            chrome_options.add_argument('--window-size=1920,1080')
-            
-            # Configuraciones para estabilidad
-            chrome_options.add_argument('--disable-extensions')
-            chrome_options.add_argument('--disable-infobars')
-            chrome_options.add_argument('--disable-notifications')
-            chrome_options.add_argument('--enable-automation')
-            chrome_options.add_argument('--log-level=3')
-            chrome_options.add_argument('--disable-blink-features=AutomationControlled')
-            chrome_options.add_argument('--ignore-certificate-errors')
-            chrome_options.add_argument('--ignore-ssl-errors')
             
             # Configuraciones para descargas
             prefs = {
                 'download.default_directory': self.download_dir,
                 'download.prompt_for_download': False,
                 'download.directory_upgrade': True,
-                'safebrowsing.enabled': True,
-                'plugins.always_open_pdf_externally': True,
-                'profile.default_content_settings.popups': 0,
-                'profile.default_content_setting_values.automatic_downloads': 1
+                'safebrowsing.enabled': True
             }
             chrome_options.add_experimental_option('prefs', prefs)
-            chrome_options.add_experimental_option('excludeSwitches', ['enable-logging'])
             
-            # Configurar el servicio sin ChromeType específico
-            service = Service(
-                ChromeDriverManager().install(),
-                log_output=os.path.devnull
-            )
+            service = Service(ChromeDriverManager().install())
+            self.driver = webdriver.Chrome(service=service, options=chrome_options)
+            self.driver.implicitly_wait(10)
+            self.wait = WebDriverWait(self.driver, 20)
             
-            self.driver = webdriver.Chrome(
-                service=service,
-                options=chrome_options
-            )
-            
-            # Configurar timeouts más largos para entorno cloud
-            self.driver.set_page_load_timeout(60)
-            self.driver.implicitly_wait(20)
-            self.wait = WebDriverWait(self.driver, 30)
-            
-            logger.info("Driver de Selenium configurado correctamente para entorno cloud")
+            logger.info("Driver de Selenium configurado correctamente")
             
         except Exception as e:
             logger.error(f"Error configurando el driver: {str(e)}")
@@ -406,11 +380,6 @@ class NormasActualizadasScraper:
                 nro_norma = cells[1].text.strip()
                 materia = cells[2].text.strip()
                 
-                # Verificar si el documento ya existe
-                if self.check_document_exists(nro_norma, titulo):
-                    logger.info(f"Documento ya procesado: {titulo}")
-                    return None
-                
                 # Generar ID único
                 tipo_norma = self.detect_tipo_norma(titulo)
                 id_norma = self.generate_unique_id(tipo_norma, nro_norma)
@@ -420,25 +389,17 @@ class NormasActualizadasScraper:
                 if self.click_download(row):
                     pdf_path = self.wait_for_download()
                     if pdf_path:
-                        s3_key = f"pdfs/{id_norma}.pdf"
-                        
-                        # Verificar si el archivo ya existe en S3
-                        try:
-                            self.s3_client.head_object(Bucket=self.bucket_name, Key=s3_key)
-                            logger.info(f"PDF ya existe en S3: {s3_key}")
-                            os.remove(pdf_path)
-                        except:
-                            # Si no existe, subir el archivo
-                            self.s3_client.upload_file(pdf_path, self.bucket_name, s3_key)
-                            logger.info(f"PDF subido a S3: {s3_key}")
-                            os.remove(pdf_path)
+                        s3_key = f"raw/{id_norma}.pdf"
+                        self.s3_client.upload_file(pdf_path, self.bucket_name, s3_key)
+                        logger.info(f"PDF subido a S3: {s3_key}")
+                        os.remove(pdf_path)
                 
                 # Obtener texto completo del PDF
                 texto_completo = None
                 if pdf_path:
                     texto_completo = self.extract_pdf_text(pdf_path)
                 
-                # Categorización y retroalimentación
+                # Categorización
                 categorizacion = self.categorize_document(titulo, materia, texto_completo)
                 
                 # Crear metadata
@@ -455,13 +416,9 @@ class NormasActualizadasScraper:
                     'fecha_scraping': datetime.now().isoformat(),
                     'metadata': {
                         'relevancia': categorizacion['relevancia'],
-                        'keywords': categorizacion['keywords_encontradas'],
-                        'grupo_asignado': self.determinar_grupo(texto_completo) if texto_completo else None
+                        'keywords': categorizacion['keywords_encontradas']
                     }
                 }
-                
-                # Registrar documento como procesado
-                self.register_processed_document(nro_norma, titulo, metadata)
                 
                 return metadata
             return None
@@ -538,24 +495,19 @@ class NormasActualizadasScraper:
     def click_download(self, row):
         """Hace clic en el botón de descarga y espera a que se complete"""
         try:
-            # Esperar a que la página esté completamente cargada
-            time.sleep(2)
-            
-            # Buscar el botón de descarga con espera explícita
-            download_button = WebDriverWait(row, 10).until(
-                EC.presence_of_element_located((By.CSS_SELECTOR, 'input[type="button"][value="Descargar"]'))
-            )
+            # Buscar el botón de descarga
+            download_button = row.find_element(By.CSS_SELECTOR, 'input[type="button"][value="Descargar"]')
             
             if download_button and download_button.is_displayed():
                 # Hacer scroll al botón
                 self.driver.execute_script("arguments[0].scrollIntoView(true);", download_button)
                 time.sleep(1)
                 
-                # Intentar click con JavaScript
-                self.driver.execute_script("arguments[0].click();", download_button)
+                # Intentar click
+                download_button.click()
                 
                 logger.info("Botón de descarga clickeado")
-                time.sleep(3)  # Esperar más tiempo en la nube
+                time.sleep(2)
                 return True
             
             logger.error("No se pudo encontrar el botón de descarga")
