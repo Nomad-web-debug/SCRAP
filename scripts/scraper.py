@@ -134,47 +134,27 @@ class NormasActualizadasScraper:
             chrome_options.add_argument('--no-sandbox')
             chrome_options.add_argument('--disable-dev-shm-usage')
             chrome_options.add_argument('--disable-gpu')
-            chrome_options.add_argument('--window-size=1920,1080')
             
-            # Configurar preferencias de descarga
+            # Configuraciones para descargas
             prefs = {
-                "download.default_directory": self.download_dir,
-                "download.prompt_for_download": False,
-                "download.directory_upgrade": True,
-                "safebrowsing.enabled": True,
-                "profile.default_content_settings.popups": 0,
-                "profile.default_content_setting_values.notifications": 2,
-                "profile.managed_default_content_settings.images": 1,
-                "profile.default_content_setting_values.cookies": 1
+                'download.default_directory': self.download_dir,
+                'download.prompt_for_download': False,
+                'download.directory_upgrade': True,
+                'safebrowsing.enabled': True
             }
-            chrome_options.add_experimental_option("prefs", prefs)
+            chrome_options.add_experimental_option('prefs', prefs)
             
-            # Configurar servicio de ChromeDriver
             service = Service(ChromeDriverManager().install())
-            service.log_output = os.path.devnull  # Suprimir logs del driver
-            
-            # Inicializar el driver
-            self.driver = webdriver.Chrome(
-                service=service,
-                options=chrome_options
-            )
-            
-            # Configurar timeouts
-            self.driver.set_page_load_timeout(30)
+            self.driver = webdriver.Chrome(service=service, options=chrome_options)
             self.driver.implicitly_wait(10)
-            
-            # Inicializar WebDriverWait
-            self.wait = WebDriverWait(self.driver, 10)
-            
-            # Crear directorio de descargas si no existe
-            os.makedirs(self.download_dir, exist_ok=True)
+            self.wait = WebDriverWait(self.driver, 20)
             
             logger.info("Driver de Selenium configurado correctamente")
             return True
             
         except Exception as e:
             logger.error(f"Error configurando el driver: {str(e)}")
-            return False
+            raise
 
     def wait_for_results(self):
         """Espera a que la página cargue y muestra los resultados"""
@@ -532,77 +512,26 @@ class NormasActualizadasScraper:
         return max(puntuaciones.items(), key=lambda x: x[1])[0]
 
     def click_download(self, row):
-        """Hace clic en el botón de descarga de una fila"""
+        """Hace clic en el botón de descarga y espera a que se complete"""
         try:
-            # Primero intentar con el selector original que funcionaba
-            try:
-                download_button = row.find_element(By.XPATH, './/input[@type="button" and @value="Descargar"]')
-                if download_button and download_button.is_displayed():
-                    # Hacer scroll al botón y esperar
-                    self.driver.execute_script("arguments[0].scrollIntoView(true);", download_button)
-                    time.sleep(2)
-                    
-                    # Asegurar que el botón sea clickeable
-                    self.wait.until(EC.element_to_be_clickable((By.XPATH, './/input[@type="button" and @value="Descargar"]')))
-                    
-                    # Intentar click con JavaScript para evitar problemas de intercepción
-                    self.driver.execute_script("arguments[0].click();", download_button)
-                    logger.info("Botón de descarga clickeado (método original)")
-                    time.sleep(2)
-                    return True
-            except Exception as e:
-                logger.debug(f"Error con método original: {str(e)}")
+            # Buscar el botón de descarga usando XPath
+            download_button = row.find_element(By.XPATH, './/input[@type="button" and @value="Descargar"]')
             
-            # Si falla el método original, intentar con selectores alternativos
-            selectors = [
-                "input.btn-primary[value='Descargar']",
-                "input[type='button'][value='Descargar']",
-                "button:contains('Descargar')",
-                "a[href*='descargar']"
-            ]
-            
-            for selector in selectors:
-                try:
-                    logger.info(f"Intentando selector alternativo: {selector}")
-                    if selector.startswith("//"):
-                        button = row.find_element(By.XPATH, selector)
-                    else:
-                        button = row.find_element(By.CSS_SELECTOR, selector)
-                    
-                    if button and button.is_displayed():
-                        # Hacer scroll al botón
-                        self.driver.execute_script("arguments[0].scrollIntoView(true);", button)
-                        time.sleep(1)
-                        
-                        # Intentar diferentes métodos de clic
-                        try:
-                            button.click()
-                        except:
-                            try:
-                                self.driver.execute_script("arguments[0].click();", button)
-                            except:
-                                # Si falla el clic directo, intentar con JavaScript
-                                self.driver.execute_script("""
-                                    var element = arguments[0];
-                                    var mouseoverEvent = new MouseEvent('mouseover', {
-                                        'view': window,
-                                        'bubbles': true,
-                                        'cancelable': true
-                                    });
-                                    element.dispatchEvent(mouseoverEvent);
-                                    element.click();
-                                """, button)
-                        
-                        logger.info(f"Botón de descarga clickeado usando selector alternativo: {selector}")
-                        time.sleep(2)
-                        return True
+            if download_button and download_button.is_displayed():
+                # Hacer scroll al botón y esperar
+                self.driver.execute_script("arguments[0].scrollIntoView(true);", download_button)
+                time.sleep(2)
                 
-                except Exception as e:
-                    logger.debug(f"Selector {selector} no funcionó: {str(e)}")
-                    continue
+                # Asegurar que el botón sea clickeable
+                self.wait.until(EC.element_to_be_clickable((By.XPATH, './/input[@type="button" and @value="Descargar"]')))
+                
+                # Intentar click con JavaScript para evitar problemas de intercepción
+                self.driver.execute_script("arguments[0].click();", download_button)
+                logger.info("Botón de descarga clickeado")
+                time.sleep(2)
+                return True
             
-            # Si llegamos aquí, no se encontró el botón
-            logger.error("No se pudo encontrar el botón de descarga con ningún selector")
+            logger.error("No se pudo encontrar el botón de descarga")
             return False
             
         except Exception as e:
