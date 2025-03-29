@@ -114,21 +114,7 @@ jobs:
           ANTHROPIC_API_KEY: ${{ env.ANTHROPIC_API_KEY }}
         run: |
           echo "Verificando archivos antes del procesamiento..."
-          python -c "
-          import boto3
-          import os
-          
-          s3 = boto3.client('s3')
-          bucket = os.getenv('BUCKET_NAME')
-          
-          # Verificar archivos raw
-          raw = s3.list_objects_v2(Bucket=bucket, Prefix='raw/')
-          if 'Contents' not in raw or len(raw['Contents']) == 0:
-              print('No hay archivos para procesar')
-              exit(1)
-              
-          print(f'Encontrados {len(raw["Contents"])} archivos para procesar')
-          "
+          python -c "import boto3,os; s3=boto3.client('s3'); bucket=os.getenv('BUCKET_NAME'); raw=s3.list_objects_v2(Bucket=bucket,Prefix='raw/'); print('No hay archivos para procesar' if not raw.get('Contents') else f'Encontrados {len(raw[\"Contents\"])} archivos para procesar')"
           
           echo "Iniciando procesamiento..."
           python scripts/processor.py
