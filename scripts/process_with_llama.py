@@ -7,7 +7,6 @@ from typing import Dict, List, Optional
 import boto3
 import fitz  # PyMuPDF
 import pandas as pd
-import requests
 
 # Configurar logging
 logging.basicConfig(
@@ -147,74 +146,80 @@ def clean_text(text: str) -> str:
 
 def generate_prompt(text: str, filename: str) -> str:
     """
-    Genera el prompt para el modelo Llama
+    Genera el prompt para Llama-2-70B
     """
-    return f"""Eres un asistente legal especializado en análisis y estructuración de documentos jurídicos. 
-    Lee cuidadosamente el siguiente texto legal extraído del archivo '{filename}' y genera una estructura detallada.
-
-    INSTRUCCIONES:
-    1. Lee el texto completo y comprende su contexto legal
-    2. Identifica el tipo de documento y su rama del derecho
-    3. Extrae la estructura jerárquica (títulos, capítulos, artículos)
-    4. Genera un ID único basado en el tipo y número de documento
-    5. Identifica palabras clave relevantes
-    6. Añade un comentario explicativo para usuarios no expertos
-
-    FORMATO DE SALIDA REQUERIDO:
+    return f"""Analiza el siguiente texto legal del archivo {filename} y genera una estructura JSON detallada.
+    
+    Instrucciones específicas:
+    1. Identifica el tipo de documento legal
+    2. Extrae la estructura jerárquica completa
+    3. Genera un ID único basado en el contenido
+    4. Identifica artículos, capítulos y secciones
+    5. Extrae referencias y citas
+    6. Genera tags relevantes
+    
+    El resultado debe seguir este formato exacto:
     {{
-        "id": "identificador-único (ej: CPP-259, CONST-Art93)",
-        "documento": "nombre completo del documento",
-        "tipo_documento": "tipo específico de norma (ej: Código, Reglamento, Constitución)",
-        "rama_derecho": "rama jurídica principal (ej: Penal, Constitucional, Civil)",
-        "articulo_numero": "número del artículo si aplica",
-        "articulo_titulo": "título del artículo si existe",
-        "contenido": "texto completo del artículo o sección",
-        "titulo": "título o parte mayor donde se encuentra",
-        "capitulo": "capítulo específico si aplica",
-        "tags": ["palabras", "clave", "relevantes"],
-        "fuente": "referencia o enlace al documento original",
-        "modificado": false,
-        "fecha_ultima_actualizacion": null,
-        "comentario_IA": "explicación clara y concisa para usuarios no expertos"
+        "id": "string",
+        "documento": "string",
+        "tipo_documento": "string",
+        "estructura": {{
+            "capitulos": [
+                {{
+                    "titulo": "string",
+                    "articulos": [
+                        {{
+                            "numero": "string",
+                            "contenido": "string",
+                            "referencias": ["string"]
+                        }}
+                    ]
+                }}
+            ]
+        }},
+        "tags": ["string"]
     }}
-
-    TEXTO A ANALIZAR:
+    
+    Texto a analizar:
     {text}
+    
+    Genera una respuesta JSON válida que siga exactamente el formato especificado.
+    </response>"""
 
-    CONSIDERACIONES IMPORTANTES:
-    1. Mantén la estructura JSON exacta
-    2. Asegúrate de que todos los campos obligatorios estén presentes
-    3. Si un campo no aplica, usa null o un array vacío según corresponda
-    4. El comentario debe ser claro y útil para usuarios no expertos
-    5. Las palabras clave deben ser relevantes para búsquedas
-    6. Identifica claramente la jerarquía del documento
+def invoke_llama(text: str, filename: str, endpoint_name: str) -> Dict:
     """
-
-def invoke_llama(text: str, filename: str, api_url: str) -> Dict:
-    """
-    Invoca la API de Llama para procesar el texto
+    Invoca el endpoint de SageMaker con Llama para procesar el texto
     """
     try:
-        headers = {
-            'Content-Type': 'application/json'
-        }
+        # Crear cliente de SageMaker
+        runtime = boto3.client('sagemaker-runtime')
         
+        # Generar prompt
+        prompt = generate_prompt(text, filename)
+        
+        # Preparar payload
         payload = {
-            'prompt': generate_prompt(text, filename),
-            'max_tokens': 4000,
-            'temperature': 0.1,
-            'top_p': 0.9,
-            'frequency_penalty': 0.3,
-            'presence_penalty': 0.3
+            "prompt": prompt,
+            "max_tokens": 4000,
+            "temperature": 0.1,
+            "top_p": 0.9,
+            "frequency_penalty": 0.3,
+            "presence_penalty": 0.3
         }
         
-        response = requests.post(api_url, json=payload, headers=headers)
-        response.raise_for_status()  # Lanzar excepción si hay error HTTP
+        # Invocar endpoint
+        response = runtime.invoke_endpoint(
+            EndpointName=endpoint_name,
+            ContentType='application/json',
+            Body=json.dumps(payload)
+        )
         
-        return response.json()
+        # Procesar respuesta
+        response_body = json.loads(response['Body'].read().decode())
+        return json.loads(response_body['generated_text'])
         
     except Exception as e:
-        logger.error(f"Error invocando Llama: {str(e)}")
+        logger.error(f"Error invocando Llama en SageMaker: {str(e)}")
         raise
 
 def validate_structure(data: Dict) -> bool:
@@ -402,69 +407,19 @@ def create_index_html(output_dir: str, csv_file: str, json_files: List[str]):
     except Exception as e:
         logger.error(f"Error creando archivo HTML: {str(e)}")
 
-def process_pdfs(input_dir: str, output_dir: str, api_url: str):
-    """
-    Procesa todos los PDFs en el directorio
-    """
-    try:
-        # Obtener lista de PDFs
-        pdf_files = [f for f in os.listdir(input_dir) if f.endswith('.pdf')]
-        results = []
-        
-        # Procesar cada PDF
-        for pdf_file in pdf_files:
-            try:
-                pdf_path = os.path.join(input_dir, pdf_file)
-                logger.info(f"Procesando {pdf_file}...")
-                
-                # Extraer y limpiar texto
-                text = extract_text_from_pdf(pdf_path)
-                if not text:
-                    logger.warning(f"No se pudo extraer texto de {pdf_file}")
-                    continue
-                    
-                text = clean_text(text)
-                
-                # Procesar con Llama
-                result = invoke_llama(text, pdf_file, api_url)
-                
-                # Validar estructura
-                if not validate_structure(result):
-                    logger.warning(f"Estructura inválida para {pdf_file}")
-                    continue
-                
-                # Añadir metadata
-                result['archivo_original'] = pdf_file
-                result['fecha_procesamiento'] = datetime.now().isoformat()
-                
-                results.append(result)
-                logger.info(f"Documento {pdf_file} procesado exitosamente")
-                
-            except Exception as e:
-                logger.error(f"Error procesando {pdf_file}: {str(e)}")
-                continue
-        
-        # Guardar resultados
-        if results:
-            save_results(results, output_dir)
-            logger.info(f"Procesamiento completado. {len(results)} documentos procesados")
-        else:
-            logger.warning("No se procesó ningún documento correctamente")
-            
-    except Exception as e:
-        logger.error(f"Error en el procesamiento: {str(e)}")
-        raise
-
 def main():
-    parser = argparse.ArgumentParser(description='Procesa PDFs con Llama')
+    parser = argparse.ArgumentParser(description='Procesa PDFs con Llama en SageMaker')
     parser.add_argument('--input-dir', required=True, help='Directorio con PDFs')
     parser.add_argument('--output-dir', required=True, help='Directorio para resultados')
-    parser.add_argument('--api-url', required=True, help='URL de la API de Llama')
+    parser.add_argument('--endpoint', required=True, help='Nombre del endpoint de SageMaker')
     
     args = parser.parse_args()
     
     # Crear directorio de salida si no existe
     os.makedirs(args.output_dir, exist_ok=True)
+    
+    # Lista para almacenar todos los resultados
+    all_results = []
     
     # Procesar cada PDF en el directorio
     for filename in os.listdir(args.input_dir):
@@ -480,20 +435,14 @@ def main():
                     # Limpiar texto
                     text = clean_text(text)
                     
-                    # Procesar con Llama
-                    result = invoke_llama(text, filename, args.api_url)
+                    # Procesar con Llama en SageMaker
+                    result = invoke_llama(text, filename, args.endpoint)
                     
                     # Validar estructura
                     if validate_structure(result):
-                        # Guardar resultado
-                        output_file = os.path.join(
-                            args.output_dir,
-                            f"{result['id']}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
-                        )
-                        with open(output_file, 'w', encoding='utf-8') as f:
-                            json.dump(result, f, ensure_ascii=False, indent=2)
-                            
-                        logger.info(f"Resultado guardado en {output_file}")
+                        # Añadir a resultados
+                        all_results.append(result)
+                        logger.info(f"Documento {filename} procesado exitosamente")
                     else:
                         logger.error(f"Estructura inválida para {filename}")
                 else:
@@ -501,6 +450,13 @@ def main():
                     
             except Exception as e:
                 logger.error(f"Error procesando {filename}: {str(e)}")
+    
+    # Guardar todos los resultados
+    if all_results:
+        save_results(all_results, args.output_dir)
+        logger.info(f"Procesamiento completado. {len(all_results)} documentos procesados")
+    else:
+        logger.warning("No se procesó ningún documento correctamente")
 
 if __name__ == '__main__':
     main() 

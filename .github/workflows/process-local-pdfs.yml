@@ -11,8 +11,8 @@ on:
         description: 'Directorio para resultados'
         required: true
         default: 'estructurados_local'
-      llama_api_url:
-        description: 'URL de la API de Llama'
+      sagemaker_endpoint:
+        description: 'Nombre del endpoint de SageMaker con Llama'
         required: true
         type: string
 
@@ -22,15 +22,15 @@ permissions:
   pages: write
   id-token: write
 
-env:
-  AWS_REGION: us-east-1
-  AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-  AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-  LLAMA_ENDPOINT: ${{ inputs.llama_api_url }}
-
 jobs:
   process-pdfs:
     runs-on: ubuntu-latest
+    
+    env:
+      AWS_REGION: us-east-1
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      SAGEMAKER_ENDPOINT: ${{ inputs.sagemaker_endpoint }}
     
     steps:
     - uses: actions/checkout@v3
@@ -46,16 +46,16 @@ jobs:
     - name: Instalar dependencias
       run: |
         python -m pip install --upgrade pip
-        pip install boto3 PyMuPDF pandas requests
+        pip install PyMuPDF pandas boto3
 
-    - name: Verificar variables de entorno
+    - name: Verificar credenciales AWS
       run: |
         if [ -z "$AWS_REGION" ] || [ -z "$AWS_ACCESS_KEY_ID" ] || [ -z "$AWS_SECRET_ACCESS_KEY" ]; then
           echo "Error: Faltan credenciales de AWS"
           exit 1
         fi
-        if [ -z "$LLAMA_ENDPOINT" ]; then
-          echo "Error: Endpoint de Llama no configurado"
+        if [ -z "$SAGEMAKER_ENDPOINT" ]; then
+          echo "Error: Endpoint de SageMaker no configurado"
           exit 1
         fi
 
@@ -83,7 +83,7 @@ jobs:
         python scripts/process_with_llama.py \
           --input-dir "${{ github.event.inputs.input_dir }}" \
           --output-dir "${{ github.event.inputs.output_dir }}" \
-          --api-url "${{ inputs.llama_api_url }}"
+          --endpoint "${{ env.SAGEMAKER_ENDPOINT }}"
 
     - name: Generar página de descargas
       if: always()
