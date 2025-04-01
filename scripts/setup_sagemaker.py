@@ -12,6 +12,53 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+def get_or_create_role(iam_client):
+    """
+    Obtiene o crea el rol de ejecución para SageMaker
+    """
+    role_name = 'AmazonSageMaker-ExecutionRole'
+    
+    try:
+        # Intentar obtener el rol
+        response = iam_client.get_role(RoleName=role_name)
+        logger.info(f"Rol {role_name} encontrado")
+        return response['Role']['Arn']
+    except ClientError as e:
+        if e.response['Error']['Code'] == 'NoSuchEntity':
+            # Crear el rol si no existe
+            logger.info(f"Creando rol {role_name}...")
+            
+            # Política de confianza para SageMaker
+            trust_policy = {
+                "Version": "2012-10-17",
+                "Statement": [
+                    {
+                        "Effect": "Allow",
+                        "Principal": {
+                            "Service": "sagemaker.amazonaws.com"
+                        },
+                        "Action": "sts:AssumeRole"
+                    }
+                ]
+            }
+            
+            # Crear el rol
+            response = iam_client.create_role(
+                RoleName=role_name,
+                AssumeRolePolicyDocument=json.dumps(trust_policy)
+            )
+            
+            # Adjuntar políticas necesarias
+            iam_client.attach_role_policy(
+                RoleName=role_name,
+                PolicyArn='arn:aws:iam::aws:policy/AmazonSageMakerFullAccess'
+            )
+            
+            logger.info(f"Rol {role_name} creado exitosamente")
+            return response['Role']['Arn']
+        else:
+            raise
+
 def create_sagemaker_endpoint():
     """
     Crea un endpoint de SageMaker con Llama-2-70B si no existe
@@ -23,9 +70,18 @@ def create_sagemaker_endpoint():
         # Inicializar clientes con región específica
         session = boto3.Session(region_name=region)
         sagemaker = session.client('sagemaker')
-        runtime = session.client('sagemaker-runtime')
+        iam = session.client('iam')
+        sts = session.client('sts')
         
         logger.info(f"Configurando servicios en la región: {region}")
+        
+        # Obtener ID de cuenta
+        account_id = sts.get_caller_identity()["Account"]
+        logger.info(f"ID de cuenta AWS: {account_id}")
+        
+        # Obtener o crear rol de ejecución
+        role_arn = get_or_create_role(iam)
+        logger.info(f"Usando rol: {role_arn}")
         
         endpoint_name = 'llama-2-70b-endpoint'
         
@@ -47,7 +103,7 @@ def create_sagemaker_endpoint():
             logger.info(f"Creando modelo {model_name}...")
             sagemaker.create_model(
                 ModelName=model_name,
-                ExecutionRoleArn='arn:aws:iam::aws:role/service-role/AmazonSageMaker-ExecutionRole',
+                ExecutionRoleArn=role_arn,
                 PrimaryContainer={
                     'Image': f'763104351884.dkr.ecr.{region}.amazonaws.com/huggingface-pytorch-inference:2.0.1-transformers4.28.1-gpu-py310-cu118-ubuntu20.04-sagemaker',
                     'ModelDataUrl': 's3://huggingface-sagemaker-models/llama-2-70b/model.tar.gz'
@@ -67,11 +123,7 @@ def create_sagemaker_endpoint():
                     'InstanceType': 'ml.g5.12xlarge',
                     'InitialInstanceCount': 1,
                     'ModelName': model_name,
-                    'VariantName': 'AllTraffic',
-                    'ServerlessConfig': {
-                        'MaxConcurrency': 1,
-                        'MemorySizeInMB': 6144
-                    }
+                    'VariantName': 'AllTraffic'
                 }]
             )
         
@@ -124,17 +176,13 @@ def test_endpoint(endpoint_name):
         return False
 
 if __name__ == '__main__':
-    # Verificar región
-    if 'AWS_REGION' not in os.environ:
-        logger.error("AWS_REGION no está configurada")
-        exit(1)
-        
     try:
         endpoint_name = create_sagemaker_endpoint()
         if test_endpoint(endpoint_name):
             print(f"Endpoint {endpoint_name} configurado y funcionando correctamente")
         else:
             print("Error al probar el endpoint")
+            exit(1)
     except Exception as e:
         print(f"Error: {str(e)}")
         exit(1) 
