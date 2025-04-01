@@ -15,7 +15,7 @@ terraform {
 }
 
 provider "aws" {
-  region = "us-east-2"
+  region = var.aws_region
 }
 
 # Bucket S3 fijo para almacenar documentos
@@ -98,4 +98,213 @@ resource "aws_s3_bucket_cors_configuration" "bucket_cors" {
     expose_headers  = ["ETag"]
     max_age_seconds = 3000
   }
+}
+
+# S3 Buckets
+resource "aws_s3_bucket" "raw" {
+  bucket = "${var.project_prefix}-raw"
+}
+
+resource "aws_s3_bucket" "processed" {
+  bucket = "${var.project_prefix}-processed"
+}
+
+resource "aws_s3_bucket" "metadata" {
+  bucket = "${var.project_prefix}-metadata"
+}
+
+# DynamoDB
+resource "aws_dynamodb_table" "legal_docs" {
+  name           = "${var.project_prefix}-documents"
+  billing_mode   = "PAY_PER_REQUEST"
+  hash_key       = "id"
+  stream_enabled = true
+
+  attribute {
+    name = "id"
+    type = "S"
+  }
+
+  attribute {
+    name = "documento"
+    type = "S"
+  }
+
+  attribute {
+    name = "rama_derecho"
+    type = "S"
+  }
+
+  global_secondary_index {
+    name               = "DocumentoIndex"
+    hash_key           = "documento"
+    projection_type    = "ALL"
+  }
+
+  global_secondary_index {
+    name               = "RamaDerechoIndex"
+    hash_key           = "rama_derecho"
+    projection_type    = "ALL"
+  }
+}
+
+# IAM Role para SageMaker
+resource "aws_iam_role" "sagemaker_role" {
+  name = "${var.project_prefix}-sagemaker-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = "sts:AssumeRole"
+        Effect = "Allow"
+        Principal = {
+          Service = "sagemaker.amazonaws.com"
+        }
+      }
+    ]
+  })
+}
+
+# IAM Role para Lambda
+resource "aws_iam_role" "lambda_role" {
+  name = "${var.project_prefix}-lambda-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = "sts:AssumeRole"
+        Effect = "Allow"
+        Principal = {
+          Service = "lambda.amazonaws.com"
+        }
+      }
+    ]
+  })
+}
+
+# Lambda Functions
+resource "aws_lambda_function" "preprocessor" {
+  filename         = "lambda/preprocessor.zip"
+  function_name    = "${var.project_prefix}-preprocessor"
+  role            = aws_iam_role.lambda_role.arn
+  handler         = "index.handler"
+  runtime         = "python3.10"
+  timeout         = 300
+  memory_size     = 2048
+
+  environment {
+    variables = {
+      RAW_BUCKET = aws_s3_bucket.raw.id
+      PROCESSED_BUCKET = aws_s3_bucket.processed.id
+      DYNAMODB_TABLE = aws_dynamodb_table.legal_docs.name
+    }
+  }
+}
+
+resource "aws_lambda_function" "processor" {
+  filename         = "lambda/processor.zip"
+  function_name    = "${var.project_prefix}-processor"
+  role            = aws_iam_role.lambda_role.arn
+  handler         = "index.handler"
+  runtime         = "python3.10"
+  timeout         = 900
+  memory_size     = 10240
+
+  environment {
+    variables = {
+      SAGEMAKER_ENDPOINT = aws_sagemaker_endpoint.llama.name
+      PROCESSED_BUCKET = aws_s3_bucket.processed.id
+      METADATA_BUCKET = aws_s3_bucket.metadata.id
+      DYNAMODB_TABLE = aws_dynamodb_table.legal_docs.name
+    }
+  }
+}
+
+# SageMaker Endpoint Configuration
+resource "aws_sagemaker_endpoint_configuration" "llama" {
+  name = "${var.project_prefix}-llama-config"
+
+  production_variants {
+    variant_name           = "AllTraffic"
+    model_name            = aws_sagemaker_model.llama.name
+    initial_instance_count = 1
+    instance_type         = "ml.g5.12xlarge"
+    
+    serverless_config {
+      max_concurrency = 20
+      memory_size_in_mb = 16384
+    }
+  }
+}
+
+# SageMaker Endpoint
+resource "aws_sagemaker_endpoint" "llama" {
+  name                 = "${var.project_prefix}-llama-endpoint"
+  endpoint_config_name = aws_sagemaker_endpoint_configuration.llama.name
+}
+
+# CloudWatch Alarms
+resource "aws_cloudwatch_metric_alarm" "cost_alarm" {
+  alarm_name          = "${var.project_prefix}-cost-alarm"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = "1"
+  metric_name         = "EstimatedCharges"
+  namespace           = "AWS/Billing"
+  period             = "21600" # 6 horas
+  statistic          = "Maximum"
+  threshold          = var.cost_threshold
+  alarm_description  = "Alerta cuando los costos estimados superan el umbral"
+  alarm_actions      = [aws_sns_topic.alerts.arn]
+
+  dimensions = {
+    Currency = "USD"
+  }
+}
+
+# SNS Topic para alertas
+resource "aws_sns_topic" "alerts" {
+  name = "${var.project_prefix}-alerts"
+}
+
+# Variables
+variable "aws_region" {
+  description = "AWS Region"
+  default     = "us-east-1"
+}
+
+variable "project_prefix" {
+  description = "Prefix for all resources"
+  default     = "legal-docs"
+}
+
+variable "cost_threshold" {
+  description = "Umbral de costos diarios en USD"
+  default     = 100
+}
+
+# Outputs
+output "sagemaker_endpoint" {
+  value = aws_sagemaker_endpoint.llama.name
+}
+
+output "preprocessor_lambda" {
+  value = aws_lambda_function.preprocessor.function_name
+}
+
+output "processor_lambda" {
+  value = aws_lambda_function.processor.function_name
+}
+
+output "raw_bucket" {
+  value = aws_s3_bucket.raw.id
+}
+
+output "processed_bucket" {
+  value = aws_s3_bucket.processed.id
+}
+
+output "dynamodb_table" {
+  value = aws_dynamodb_table.legal_docs.name
 } 

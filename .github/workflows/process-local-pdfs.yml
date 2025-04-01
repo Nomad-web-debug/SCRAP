@@ -1,58 +1,172 @@
-name: Procesamiento de PDFs Locales
+name: Procesamiento de PDFs Locales (Modo Agente)
 
 on:
   workflow_dispatch:
     inputs:
-      carpeta:
-        description: 'Nombre de la carpeta con los PDFs a procesar'
+      input_dir:
+        description: 'Directorio con PDFs a procesar'
         required: true
-        type: string
         default: 'pdfs_local'
+      output_dir:
+        description: 'Directorio para resultados'
+        required: true
+        default: 'estructurados_local'
+      agent_mode:
+        description: 'Ejecutar en modo agente'
+        required: true
+        default: 'true'
+        type: boolean
 
 env:
-  AWS_REGION: us-east-2
-  ANTHROPIC_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-  BUCKET_NAME: "clasificador-docs-principal"
-  OUTPUT_DIR: "estructurados_local"
+  AWS_REGION: ${{ secrets.AWS_REGION }}
+  AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+  AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+  SAGEMAKER_ENDPOINT: ${{ secrets.SAGEMAKER_ENDPOINT }}
 
 jobs:
-  process-local-pdfs:
+  process-pdfs:
     runs-on: ubuntu-latest
+    
     steps:
-      - uses: actions/checkout@v3
-      
-      - name: Configurar Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.9'
-          
-      - name: Instalar dependencias
-        run: |
-          python -m pip install --upgrade pip
-          pip install boto3 anthropic requests PyPDF2 great-expectations
+    - uses: actions/checkout@v3
 
-      - name: Verificar carpeta de PDFs
-        run: |
-          if [ ! -d "${{ github.event.inputs.carpeta }}" ]; then
-            echo "La carpeta ${{ github.event.inputs.carpeta }} no existe"
-            exit 1
-          fi
-          echo "Carpeta encontrada: ${{ github.event.inputs.carpeta }}"
-          ls -l "${{ github.event.inputs.carpeta }}"
+    - name: Configurar Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+        cache: 'pip'
 
-      - name: Configurar AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v1
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: us-east-2
+    - name: Instalar dependencias
+      run: |
+        python -m pip install --upgrade pip
+        pip install boto3 PyMuPDF pandas requests
 
-      - name: Procesar PDFs
-        run: |
-          echo "Iniciando procesamiento de PDFs..."
-          python scripts/processor.py --input-dir "${{ github.event.inputs.carpeta }}" --output-dir "${{ env.OUTPUT_DIR }}"
-        env:
-          ANTHROPIC_API_KEY: ${{ env.ANTHROPIC_API_KEY }}
-          BUCKET_NAME: ${{ env.BUCKET_NAME }}
-          AWS_REGION: ${{ env.AWS_REGION }}
-          OUTPUT_DIR: ${{ env.OUTPUT_DIR }} 
+    - name: Verificar directorios
+      run: |
+        if [ ! -d "${{ github.event.inputs.input_dir }}" ]; then
+          echo "Error: Directorio de entrada no existe"
+          exit 1
+        fi
+        mkdir -p "${{ github.event.inputs.output_dir }}"
+        mkdir -p "public"
+
+    - name: Verificar PDFs
+      run: |
+        echo "Verificando PDFs en ${{ github.event.inputs.input_dir }}"
+        count=$(ls -1 "${{ github.event.inputs.input_dir }}"/*.pdf 2>/dev/null | wc -l)
+        if [ $count -eq 0 ]; then
+          echo "No se encontraron archivos PDF"
+          exit 1
+        fi
+        echo "Encontrados $count archivos PDF"
+
+    - name: Procesar PDFs con Llama
+      run: |
+        python scripts/process_with_llama.py \
+          --input-dir "${{ github.event.inputs.input_dir }}" \
+          --output-dir "${{ github.event.inputs.output_dir }}" \
+          --endpoint "${{ env.SAGEMAKER_ENDPOINT }}" \
+          --agent-mode "${{ github.event.inputs.agent_mode }}"
+
+    - name: Generar página de descargas
+      run: |
+        timestamp=$(date +%Y%m%d_%H%M%S)
+        
+        # Crear directorio para la página web
+        mkdir -p public
+        
+        # Comprimir resultados
+        cd "${{ github.event.inputs.output_dir }}"
+        zip -r "../public/resultados_${timestamp}.zip" .
+        cd ..
+        
+        # Crear página web con enlaces
+        cat > public/index.html << EOF
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Descargar Resultados Procesados</title>
+            <meta charset="UTF-8">
+            <style>
+                body {
+                    font-family: Arial, sans-serif;
+                    max-width: 800px;
+                    margin: 40px auto;
+                    padding: 20px;
+                    background-color: #f5f5f5;
+                }
+                .container {
+                    background-color: white;
+                    padding: 30px;
+                    border-radius: 10px;
+                    box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+                }
+                .download-section {
+                    margin: 20px 0;
+                    padding: 20px;
+                    border: 1px solid #e0e0e0;
+                    border-radius: 5px;
+                }
+                .download-button {
+                    display: inline-block;
+                    padding: 12px 24px;
+                    background-color: #4CAF50;
+                    color: white;
+                    text-decoration: none;
+                    border-radius: 5px;
+                    margin: 10px 0;
+                    transition: background-color 0.3s;
+                }
+                .download-button:hover {
+                    background-color: #45a049;
+                }
+                .timestamp {
+                    color: #666;
+                    font-size: 0.9em;
+                    margin-top: 10px;
+                }
+                .header {
+                    border-bottom: 2px solid #4CAF50;
+                    padding-bottom: 10px;
+                    margin-bottom: 20px;
+                }
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <div class="header">
+                    <h1>Resultados del Procesamiento</h1>
+                    <p>Sistema de Procesamiento de Documentos Legales</p>
+                </div>
+                
+                <div class="download-section">
+                    <h2>Descargar Resultados</h2>
+                    <p>Incluye archivos JSON individuales y CSV consolidado</p>
+                    <a href="resultados_${timestamp}.zip" class="download-button">Descargar ZIP Completo</a>
+                    <p class="timestamp">Última actualización: $(date '+%Y-%m-%d %H:%M:%S')</p>
+                </div>
+                
+                <div class="download-section">
+                    <h2>Enlaces Directos</h2>
+                    <p>Acceso directo a los archivos procesados:</p>
+                    <a href="resultados_${timestamp}/resultados.csv" class="download-button">CSV Consolidado</a>
+                </div>
+            </div>
+        </body>
+        </html>
+        EOF
+
+    - name: Publicar en GitHub Pages
+      uses: peaceiris/actions-gh-pages@v3
+      with:
+        github_token: ${{ secrets.GITHUB_TOKEN }}
+        publish_dir: ./public
+        force_orphan: true
+        commit_message: "Actualizar resultados del procesamiento [skip ci]"
+
+    - name: Guardar artefactos
+      uses: actions/upload-artifact@v3
+      with:
+        name: resultados-procesamiento
+        path: ${{ github.event.inputs.output_dir }}
+        retention-days: 7 
