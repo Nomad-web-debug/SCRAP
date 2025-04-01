@@ -7,6 +7,7 @@ from typing import Dict, List, Optional
 import boto3
 import fitz  # PyMuPDF
 import pandas as pd
+import requests
 
 # Configurar logging
 logging.basicConfig(
@@ -189,28 +190,28 @@ def generate_prompt(text: str, filename: str) -> str:
     6. Identifica claramente la jerarquía del documento
     """
 
-def invoke_llama(text: str, filename: str, endpoint_name: str) -> Dict:
+def invoke_llama(text: str, filename: str, api_url: str) -> Dict:
     """
-    Invoca el endpoint de Llama para procesar el texto
+    Invoca la API de Llama para procesar el texto
     """
     try:
-        sagemaker = boto3.client('sagemaker-runtime')
+        headers = {
+            'Content-Type': 'application/json'
+        }
         
-        response = sagemaker.invoke_endpoint(
-            EndpointName=endpoint_name,
-            ContentType='application/json',
-            Body=json.dumps({
-                'prompt': generate_prompt(text, filename),
-                'max_tokens': 4000,  # Aumentado para manejar documentos más largos
-                'temperature': 0.1,  # Bajo para mayor precisión
-                'top_p': 0.9,
-                'frequency_penalty': 0.3,  # Evitar repeticiones
-                'presence_penalty': 0.3    # Fomentar diversidad
-            })
-        )
+        payload = {
+            'prompt': generate_prompt(text, filename),
+            'max_tokens': 4000,
+            'temperature': 0.1,
+            'top_p': 0.9,
+            'frequency_penalty': 0.3,
+            'presence_penalty': 0.3
+        }
         
-        result = json.loads(response['Body'].read().decode())
-        return result
+        response = requests.post(api_url, json=payload, headers=headers)
+        response.raise_for_status()  # Lanzar excepción si hay error HTTP
+        
+        return response.json()
         
     except Exception as e:
         logger.error(f"Error invocando Llama: {str(e)}")
@@ -401,7 +402,7 @@ def create_index_html(output_dir: str, csv_file: str, json_files: List[str]):
     except Exception as e:
         logger.error(f"Error creando archivo HTML: {str(e)}")
 
-def process_pdfs(input_dir: str, output_dir: str, endpoint: str):
+def process_pdfs(input_dir: str, output_dir: str, api_url: str):
     """
     Procesa todos los PDFs en el directorio
     """
@@ -425,7 +426,7 @@ def process_pdfs(input_dir: str, output_dir: str, endpoint: str):
                 text = clean_text(text)
                 
                 # Procesar con Llama
-                result = invoke_llama(text, pdf_file, endpoint)
+                result = invoke_llama(text, pdf_file, api_url)
                 
                 # Validar estructura
                 if not validate_structure(result):
@@ -455,17 +456,51 @@ def process_pdfs(input_dir: str, output_dir: str, endpoint: str):
         raise
 
 def main():
-    parser = argparse.ArgumentParser(description='Procesador de PDFs con Llama')
+    parser = argparse.ArgumentParser(description='Procesa PDFs con Llama')
     parser.add_argument('--input-dir', required=True, help='Directorio con PDFs')
     parser.add_argument('--output-dir', required=True, help='Directorio para resultados')
-    parser.add_argument('--endpoint', required=True, help='Nombre del endpoint de SageMaker')
+    parser.add_argument('--api-url', required=True, help='URL de la API de Llama')
+    
     args = parser.parse_args()
     
-    try:
-        process_pdfs(args.input_dir, args.output_dir, args.endpoint)
-    except Exception as e:
-        logger.error(f"Error en main: {str(e)}")
-        exit(1)
+    # Crear directorio de salida si no existe
+    os.makedirs(args.output_dir, exist_ok=True)
+    
+    # Procesar cada PDF en el directorio
+    for filename in os.listdir(args.input_dir):
+        if filename.endswith('.pdf'):
+            logger.info(f"Procesando {filename}...")
+            
+            try:
+                # Extraer texto del PDF
+                pdf_path = os.path.join(args.input_dir, filename)
+                text = extract_text_from_pdf(pdf_path)
+                
+                if text:
+                    # Limpiar texto
+                    text = clean_text(text)
+                    
+                    # Procesar con Llama
+                    result = invoke_llama(text, filename, args.api_url)
+                    
+                    # Validar estructura
+                    if validate_structure(result):
+                        # Guardar resultado
+                        output_file = os.path.join(
+                            args.output_dir,
+                            f"{result['id']}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+                        )
+                        with open(output_file, 'w', encoding='utf-8') as f:
+                            json.dump(result, f, ensure_ascii=False, indent=2)
+                            
+                        logger.info(f"Resultado guardado en {output_file}")
+                    else:
+                        logger.error(f"Estructura inválida para {filename}")
+                else:
+                    logger.error(f"No se pudo extraer texto de {filename}")
+                    
+            except Exception as e:
+                logger.error(f"Error procesando {filename}: {str(e)}")
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     main() 
