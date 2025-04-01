@@ -184,17 +184,17 @@ class NormasActualizadasScraper:
             # Buscar tabla de resultados
             logger.info("Buscando tabla de resultados...")
             try:
-                table = self.wait.until(
+                        table = self.wait.until(
                     EC.presence_of_element_located((By.CSS_SELECTOR, "table"))
                 )
                 
-                # Verificar si hay filas en la tabla
-                rows = table.find_elements(By.TAG_NAME, "tr")
+            # Verificar si hay filas en la tabla
+            rows = table.find_elements(By.TAG_NAME, "tr")
                 if len(rows) > 1:
-                    logger.info(f"Se encontraron {len(rows)} filas en la tabla")
-                    return True
-                else:
-                    logger.warning("La tabla está vacía")
+                logger.info(f"Se encontraron {len(rows)} filas en la tabla")
+                return True
+            else:
+                logger.warning("La tabla está vacía")
                     return False
                     
             except TimeoutException:
@@ -516,20 +516,20 @@ class NormasActualizadasScraper:
         try:
             # Buscar el botón de descarga usando XPath
             download_button = row.find_element(By.XPATH, './/input[@type="button" and @value="Descargar"]')
-            
-            if download_button and download_button.is_displayed():
+                        
+                    if download_button and download_button.is_displayed():
                 # Hacer scroll al botón y esperar
-                self.driver.execute_script("arguments[0].scrollIntoView(true);", download_button)
+                        self.driver.execute_script("arguments[0].scrollIntoView(true);", download_button)
                 time.sleep(2)
                 
                 # Asegurar que el botón sea clickeable
                 self.wait.until(EC.element_to_be_clickable((By.XPATH, './/input[@type="button" and @value="Descargar"]')))
-                
+                        
                 # Intentar click con JavaScript para evitar problemas de intercepción
-                self.driver.execute_script("arguments[0].click();", download_button)
+                            self.driver.execute_script("arguments[0].click();", download_button)
                 logger.info("Botón de descarga clickeado")
                 time.sleep(2)
-                return True
+                        return True
             
             logger.error("No se pudo encontrar el botón de descarga")
             return False

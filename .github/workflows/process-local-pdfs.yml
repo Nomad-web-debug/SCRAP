@@ -1,0 +1,58 @@
+name: Procesamiento de PDFs Locales
+
+on:
+  workflow_dispatch:
+    inputs:
+      carpeta:
+        description: 'Nombre de la carpeta con los PDFs a procesar'
+        required: true
+        type: string
+        default: 'pdfs_local'
+
+env:
+  AWS_REGION: us-east-2
+  ANTHROPIC_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+  BUCKET_NAME: "clasificador-docs-principal"
+  OUTPUT_DIR: "estructurados_local"
+
+jobs:
+  process-local-pdfs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Configurar Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+          
+      - name: Instalar dependencias
+        run: |
+          python -m pip install --upgrade pip
+          pip install boto3 anthropic requests PyPDF2 great-expectations
+
+      - name: Verificar carpeta de PDFs
+        run: |
+          if [ ! -d "${{ github.event.inputs.carpeta }}" ]; then
+            echo "La carpeta ${{ github.event.inputs.carpeta }} no existe"
+            exit 1
+          fi
+          echo "Carpeta encontrada: ${{ github.event.inputs.carpeta }}"
+          ls -l "${{ github.event.inputs.carpeta }}"
+
+      - name: Configurar AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-2
+
+      - name: Procesar PDFs
+        run: |
+          echo "Iniciando procesamiento de PDFs..."
+          python scripts/processor.py --input-dir "${{ github.event.inputs.carpeta }}" --output-dir "${{ env.OUTPUT_DIR }}"
+        env:
+          ANTHROPIC_API_KEY: ${{ env.ANTHROPIC_API_KEY }}
+          BUCKET_NAME: ${{ env.BUCKET_NAME }}
+          AWS_REGION: ${{ env.AWS_REGION }}
+          OUTPUT_DIR: ${{ env.OUTPUT_DIR }} 

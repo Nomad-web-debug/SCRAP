@@ -8,6 +8,10 @@ from PyPDF2 import PdfReader
 from io import BytesIO
 import uuid
 import time
+import sys
+import argparse
+import pandas as pd
+from processor import TextStructureProcessor
 
 # Configurar logging
 logging.basicConfig(level=logging.INFO)
@@ -185,6 +189,167 @@ class DocumentProcessor:
         except Exception as e:
             logger.error(f"Error en el procesamiento: {str(e)}")
 
-if __name__ == '__main__':
-    processor = DocumentProcessor()
-    processor.process_documents() 
+def save_to_csv(results, output_dir):
+    """Guarda los resultados en formato CSV para entrenamiento"""
+    try:
+        # Crear DataFrame con los datos estructurados
+        data = []
+        for result in results:
+            row = {
+                'id': result.get('id', ''),
+                'categoria_principal': result.get('categoria_principal', ''),
+                'subcategoria_1': result.get('subcategoria_1', ''),
+                'subcategoria_2': result.get('subcategoria_2', ''),
+                'subcategoria_3': result.get('subcategoria_3', ''),
+                'titulo_numero': result.get('titulo_numero', ''),
+                'titulo_nombre': result.get('titulo_nombre', ''),
+                'capitulo_numero': result.get('capitulo_numero', ''),
+                'capitulo_nombre': result.get('capitulo_nombre', ''),
+                'seccion_numero': result.get('seccion_numero', ''),
+                'seccion_nombre': result.get('seccion_nombre', ''),
+                'articulo': result.get('articulo', ''),
+                'titulo': result.get('titulo', ''),
+                'texto_completo': result.get('texto_norma', ''),
+                'palabras_clave': '|'.join(result.get('palabras_clave', [])),
+                'tipo_norma': result.get('tipo_norma', ''),
+                'numero_norma': result.get('numero_norma', ''),
+                'entidad_emisora': result.get('entidad_emisora', ''),
+                'ambito_aplicacion': result.get('ambito_aplicacion', ''),
+                'estado_vigencia': result.get('estado_vigencia', ''),
+                'fecha_procesamiento': result.get('fecha_procesamiento', ''),
+                'archivo_original': result.get('archivo_original', '')
+            }
+            
+            # Añadir referencias normativas
+            referencias = result.get('referencias_normativas', [])
+            row['referencias_normativas'] = '|'.join(referencias)
+            
+            # Añadir modificaciones
+            modificaciones = result.get('modificaciones', [])
+            row['modificaciones'] = '|'.join(modificaciones)
+            
+            data.append(row)
+        
+        df = pd.DataFrame(data)
+        
+        # Guardar CSV localmente
+        csv_filename = f"datos_entrenamiento_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+        csv_path = os.path.join(output_dir, csv_filename)
+        df.to_csv(csv_path, index=False, encoding='utf-8')
+        print(f"Datos guardados en CSV: {csv_path}")
+        
+        # Guardar CSV en S3
+        s3 = boto3.client('s3')
+        bucket = os.getenv('BUCKET_NAME')
+        s3_key = f"processed_local/{csv_filename}"
+        
+        s3.put_object(
+            Bucket=bucket,
+            Key=s3_key,
+            Body=df.to_csv(index=False).encode('utf-8'),
+            ContentType='text/csv'
+        )
+        print(f"CSV guardado en S3: {s3_key}")
+        
+    except Exception as e:
+        print(f"Error guardando CSV: {str(e)}")
+
+def process_local_pdfs(input_dir, output_dir):
+    """Procesa PDFs desde una carpeta local"""
+    processor = TextStructureProcessor()
+    
+    # Verificar que la carpeta existe
+    if not os.path.exists(input_dir):
+        print(f"Error: La carpeta {input_dir} no existe")
+        sys.exit(1)
+        
+    # Crear carpeta de salida si no existe
+    os.makedirs(output_dir, exist_ok=True)
+        
+    # Obtener lista de PDFs
+    pdf_files = [f for f in os.listdir(input_dir) if f.endswith('.pdf')]
+    
+    if not pdf_files:
+        print(f"No se encontraron archivos PDF en la carpeta {input_dir}")
+        sys.exit(1)
+        
+    print(f"Encontrados {len(pdf_files)} archivos PDF para procesar")
+    
+    # Lista para almacenar todos los resultados
+    all_results = []
+    
+    # Procesar cada PDF
+    for pdf_file in pdf_files:
+        pdf_path = os.path.join(input_dir, pdf_file)
+        print(f"\nProcesando: {pdf_file}")
+        
+        try:
+            # Extraer texto del PDF
+            pdf_reader = PdfReader(pdf_path)
+            texto_completo = []
+            for page in pdf_reader.pages:
+                texto_completo.append(page.extract_text())
+            texto_completo = '\n'.join(texto_completo)
+            
+            # Procesar el documento
+            result = processor.process_document(pdf_path)
+            
+            # Añadir información adicional
+            result['fecha_procesamiento'] = datetime.now().isoformat()
+            result['archivo_original'] = pdf_file
+            result['estado_vigencia'] = 'VIGENTE'  # Por defecto
+            result['ambito_aplicacion'] = 'NACIONAL'  # Por defecto
+            result['texto_norma'] = texto_completo  # Añadido texto completo
+            
+            # Crear nombre único para el archivo
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            output_filename = f"{timestamp}_{os.path.splitext(pdf_file)[0]}.json"
+            output_path = os.path.join(output_dir, output_filename)
+            
+            # Guardar resultado localmente
+            with open(output_path, 'w', encoding='utf-8') as f:
+                json.dump(result, f, ensure_ascii=False, indent=2)
+            
+            print(f"Documento procesado y guardado localmente: {output_path}")
+            
+            # Guardar resultado en S3
+            s3 = boto3.client('s3')
+            bucket = os.getenv('BUCKET_NAME')
+            s3_key = f"processed_local/{output_filename}"
+            
+            s3.put_object(
+                Bucket=bucket,
+                Key=s3_key,
+                Body=json.dumps(result, ensure_ascii=False),
+                ContentType='application/json'
+            )
+            
+            print(f"Documento guardado en S3: {s3_key}")
+            
+            # Añadir resultado a la lista
+            all_results.append(result)
+            
+        except Exception as e:
+            print(f"Error procesando {pdf_file}: {str(e)}")
+            continue
+    
+    # Guardar todos los resultados en CSV
+    if all_results:
+        save_to_csv(all_results, output_dir)
+
+def main():
+    parser = argparse.ArgumentParser(description='Procesador de documentos PDF')
+    parser.add_argument('--input-dir', help='Carpeta con PDFs a procesar')
+    parser.add_argument('--output-dir', help='Carpeta para guardar resultados estructurados')
+    args = parser.parse_args()
+    
+    if args.input_dir:
+        output_dir = args.output_dir or os.getenv('OUTPUT_DIR', 'estructurados_local')
+        process_local_pdfs(args.input_dir, output_dir)
+    else:
+        # Código existente para procesar desde S3
+        processor = DocumentProcessor()
+        processor.process_documents()
+
+if __name__ == "__main__":
+    main() 
