@@ -11,7 +11,7 @@ import time
 import sys
 import argparse
 import pandas as pd
-from processor import TextStructureProcessor
+from text_structure import TextStructureProcessor
 
 # Configurar logging
 logging.basicConfig(level=logging.INFO)
