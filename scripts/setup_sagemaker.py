@@ -101,12 +101,22 @@ def create_sagemaker_endpoint():
             logger.info(f"El modelo {model_name} ya existe")
         except ClientError:
             logger.info(f"Creando modelo {model_name}...")
+            
+            # Usar la imagen oficial de HuggingFace para SageMaker
+            image_uri = f"763104351884.dkr.ecr.{region}.amazonaws.com/huggingface-pytorch-inference:1.13.1-transformers4.26.0-gpu-py39-cu117-ubuntu20.04"
+            
             sagemaker.create_model(
                 ModelName=model_name,
                 ExecutionRoleArn=role_arn,
                 PrimaryContainer={
-                    'Image': f'763104351884.dkr.ecr.{region}.amazonaws.com/huggingface-pytorch-inference:2.0.1-transformers4.28.1-gpu-py310-cu118-ubuntu20.04-sagemaker',
-                    'ModelDataUrl': 's3://huggingface-sagemaker-models/llama-2-70b/model.tar.gz'
+                    'Image': image_uri,
+                    'ModelDataUrl': 's3://huggingface-models-prod/meta-llama/Llama-2-70b/pytorch_model.bin',
+                    'Environment': {
+                        'SAGEMAKER_CONTAINER_LOG_LEVEL': '20',
+                        'SAGEMAKER_REGION': region,
+                        'HF_MODEL_ID': 'meta-llama/Llama-2-70b',
+                        'HF_TASK': 'text-generation'
+                    }
                 }
             )
         
