@@ -11,12 +11,22 @@ on:
         description: 'Directorio para resultados'
         required: true
         default: 'estructurados_local'
+      llama_endpoint:
+        description: 'Endpoint de Llama'
+        required: true
+        type: string
+
+# Asegurar permisos necesarios para GitHub Actions
+permissions:
+  contents: write
+  pages: write
+  id-token: write
 
 env:
   AWS_REGION: us-east-1
   AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
   AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-  SAGEMAKER_ENDPOINT: ${{ secrets.SAGEMAKER_ENDPOINT }}
+  LLAMA_ENDPOINT: ${{ inputs.llama_endpoint }}
 
 jobs:
   process-pdfs:
@@ -24,6 +34,8 @@ jobs:
     
     steps:
     - uses: actions/checkout@v3
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
 
     - name: Configurar Python
       uses: actions/setup-python@v4
@@ -38,12 +50,12 @@ jobs:
 
     - name: Verificar variables de entorno
       run: |
-        if [ -z "$AWS_REGION" ]; then
-          echo "Error: AWS_REGION no está configurada"
+        if [ -z "$AWS_REGION" ] || [ -z "$AWS_ACCESS_KEY_ID" ] || [ -z "$AWS_SECRET_ACCESS_KEY" ]; then
+          echo "Error: Faltan credenciales de AWS"
           exit 1
         fi
-        if [ -z "$SAGEMAKER_ENDPOINT" ]; then
-          echo "Error: SAGEMAKER_ENDPOINT no está configurada"
+        if [ -z "$LLAMA_ENDPOINT" ]; then
+          echo "Error: Endpoint de Llama no configurado"
           exit 1
         fi
 
@@ -71,7 +83,7 @@ jobs:
         python scripts/process_with_llama.py \
           --input-dir "${{ github.event.inputs.input_dir }}" \
           --output-dir "${{ github.event.inputs.output_dir }}" \
-          --endpoint "${{ env.SAGEMAKER_ENDPOINT }}"
+          --endpoint "${{ env.LLAMA_ENDPOINT }}"
 
     - name: Generar página de descargas
       if: always()
@@ -175,6 +187,9 @@ jobs:
         </html>
         EOF
 
+    - name: Configurar GitHub Pages
+      uses: actions/configure-pages@v4
+
     - name: Publicar en GitHub Pages
       if: always()
       uses: peaceiris/actions-gh-pages@v3
@@ -183,6 +198,8 @@ jobs:
         publish_dir: ./public
         force_orphan: true
         commit_message: "Actualizar resultados del procesamiento [skip ci]"
+        user_name: 'github-actions[bot]'
+        user_email: 'github-actions[bot]@users.noreply.github.com'
 
     - name: Guardar artefactos
       if: always()
