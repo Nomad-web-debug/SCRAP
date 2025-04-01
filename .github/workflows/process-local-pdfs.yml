@@ -13,7 +13,7 @@ on:
         default: 'estructurados_local'
 
 env:
-  AWS_REGION: ${{ secrets.AWS_REGION }}
+  AWS_REGION: us-east-1
   AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
   AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
   SAGEMAKER_ENDPOINT: ${{ secrets.SAGEMAKER_ENDPOINT }}
@@ -35,6 +35,17 @@ jobs:
       run: |
         python -m pip install --upgrade pip
         pip install boto3 PyMuPDF pandas requests
+
+    - name: Verificar variables de entorno
+      run: |
+        if [ -z "$AWS_REGION" ]; then
+          echo "Error: AWS_REGION no está configurada"
+          exit 1
+        fi
+        if [ -z "$SAGEMAKER_ENDPOINT" ]; then
+          echo "Error: SAGEMAKER_ENDPOINT no está configurada"
+          exit 1
+        fi
 
     - name: Verificar directorios
       run: |
@@ -63,15 +74,21 @@ jobs:
           --endpoint "${{ env.SAGEMAKER_ENDPOINT }}"
 
     - name: Generar página de descargas
+      if: always()
       run: |
+        # Verificar si hay archivos procesados
+        if [ ! -d "${{ github.event.inputs.output_dir }}" ] || [ -z "$(ls -A ${{ github.event.inputs.output_dir }})" ]; then
+          echo "No hay archivos procesados para comprimir"
+          mkdir -p "${{ github.event.inputs.output_dir }}"
+          echo "No se procesaron documentos correctamente" > "${{ github.event.inputs.output_dir }}/error.txt"
+        fi
+
         timestamp=$(date +%Y%m%d_%H%M%S)
-        
-        # Crear directorio para la página web
         mkdir -p public
         
-        # Comprimir resultados
+        # Comprimir resultados (incluyendo mensaje de error si existe)
         cd "${{ github.event.inputs.output_dir }}"
-        zip -r "../public/resultados_${timestamp}.zip" .
+        zip -r "../public/resultados_${timestamp}.zip" . || echo "Error al crear ZIP"
         cd ..
         
         # Crear página web con enlaces
@@ -124,6 +141,14 @@ jobs:
                     padding-bottom: 10px;
                     margin-bottom: 20px;
                 }
+                .error-message {
+                    color: #721c24;
+                    background-color: #f8d7da;
+                    border: 1px solid #f5c6cb;
+                    padding: 10px;
+                    margin: 10px 0;
+                    border-radius: 5px;
+                }
             </style>
         </head>
         <body>
@@ -151,6 +176,7 @@ jobs:
         EOF
 
     - name: Publicar en GitHub Pages
+      if: always()
       uses: peaceiris/actions-gh-pages@v3
       with:
         github_token: ${{ secrets.GITHUB_TOKEN }}
@@ -159,6 +185,7 @@ jobs:
         commit_message: "Actualizar resultados del procesamiento [skip ci]"
 
     - name: Guardar artefactos
+      if: always()
       uses: actions/upload-artifact@v4
       with:
         name: resultados-procesamiento
