@@ -2,6 +2,7 @@ import boto3
 import json
 import time
 import logging
+import os
 from botocore.exceptions import ClientError
 
 # Configurar logging
@@ -16,9 +17,15 @@ def create_sagemaker_endpoint():
     Crea un endpoint de SageMaker con Llama-2-70B si no existe
     """
     try:
-        # Inicializar clientes
-        sagemaker = boto3.client('sagemaker')
-        runtime = boto3.client('sagemaker-runtime')
+        # Configurar región explícitamente
+        region = os.environ.get('AWS_REGION', 'us-east-1')
+        
+        # Inicializar clientes con región específica
+        session = boto3.Session(region_name=region)
+        sagemaker = session.client('sagemaker')
+        runtime = session.client('sagemaker-runtime')
+        
+        logger.info(f"Configurando servicios en la región: {region}")
         
         endpoint_name = 'llama-2-70b-endpoint'
         
@@ -42,7 +49,7 @@ def create_sagemaker_endpoint():
                 ModelName=model_name,
                 ExecutionRoleArn='arn:aws:iam::aws:role/service-role/AmazonSageMaker-ExecutionRole',
                 PrimaryContainer={
-                    'Image': '763104351884.dkr.ecr.us-east-1.amazonaws.com/huggingface-pytorch-inference:2.0.1-transformers4.28.1-gpu-py310-cu118-ubuntu20.04-sagemaker',
+                    'Image': f'763104351884.dkr.ecr.{region}.amazonaws.com/huggingface-pytorch-inference:2.0.1-transformers4.28.1-gpu-py310-cu118-ubuntu20.04-sagemaker',
                     'ModelDataUrl': 's3://huggingface-sagemaker-models/llama-2-70b/model.tar.gz'
                 }
             )
@@ -60,7 +67,11 @@ def create_sagemaker_endpoint():
                     'InstanceType': 'ml.g5.12xlarge',
                     'InitialInstanceCount': 1,
                     'ModelName': model_name,
-                    'VariantName': 'AllTraffic'
+                    'VariantName': 'AllTraffic',
+                    'ServerlessConfig': {
+                        'MaxConcurrency': 1,
+                        'MemorySizeInMB': 6144
+                    }
                 }]
             )
         
@@ -93,7 +104,10 @@ def test_endpoint(endpoint_name):
     Prueba el endpoint con un prompt simple
     """
     try:
-        runtime = boto3.client('sagemaker-runtime')
+        # Usar la misma región que el endpoint
+        region = os.environ.get('AWS_REGION', 'us-east-1')
+        runtime = boto3.client('sagemaker-runtime', region_name=region)
+        
         response = runtime.invoke_endpoint(
             EndpointName=endpoint_name,
             ContentType='application/json',
@@ -110,6 +124,11 @@ def test_endpoint(endpoint_name):
         return False
 
 if __name__ == '__main__':
+    # Verificar región
+    if 'AWS_REGION' not in os.environ:
+        logger.error("AWS_REGION no está configurada")
+        exit(1)
+        
     try:
         endpoint_name = create_sagemaker_endpoint()
         if test_endpoint(endpoint_name):
@@ -117,4 +136,5 @@ if __name__ == '__main__':
         else:
             print("Error al probar el endpoint")
     except Exception as e:
-        print(f"Error: {str(e)}") 
+        print(f"Error: {str(e)}")
+        exit(1) 
