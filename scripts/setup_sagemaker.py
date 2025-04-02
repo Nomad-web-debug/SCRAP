@@ -76,47 +76,18 @@ def attach_required_policies(iam_client, role_name):
             {
                 "Effect": "Allow",
                 "Action": [
-                    "sagemaker:CreateModel",
-                    "sagemaker:CreateEndpointConfig",
-                    "sagemaker:CreateEndpoint",
-                    "sagemaker:DescribeModel",
-                    "sagemaker:DescribeEndpointConfig",
-                    "sagemaker:DescribeEndpoint",
-                    "sagemaker:DeleteModel",
-                    "sagemaker:DeleteEndpointConfig",
-                    "sagemaker:DeleteEndpoint"
+                    "sagemaker:*",
+                    "iam:GetRole",
+                    "iam:CreateRole",
+                    "iam:AttachRolePolicy"
                 ],
-                "Resource": [
-                    f"arn:aws:sagemaker:*:{iam_client.meta.region_name}:*"
-                ]
-            },
-            {
-                "Effect": "Allow",
-                "Action": [
-                    "sagemaker:CreateModel"
-                ],
-                "Resource": [
-                    "arn:aws:sagemaker:*:763104351884:model-package/*"
-                ]
+                "Resource": "*"
             },
             {
                 "Effect": "Allow",
                 "Action": [
                     "ecr:BatchGetImage",
                     "ecr:GetDownloadUrlForLayer",
-                    "ecr:GetAuthorizationToken",
-                    "ecr:DescribeImages",
-                    "ecr:ListImages",
-                    "ecr:BatchCheckLayerAvailability"
-                ],
-                "Resource": [
-                    "arn:aws:ecr:*:763104351884:repository/*",
-                    "arn:aws:ecr:*:456233644234:repository/*"
-                ]
-            },
-            {
-                "Effect": "Allow",
-                "Action": [
                     "ecr:GetAuthorizationToken"
                 ],
                 "Resource": "*"
@@ -150,7 +121,7 @@ def attach_required_policies(iam_client, role_name):
 
 def create_sagemaker_endpoint():
     """
-    Crea un endpoint de SageMaker con Llama-2-70B usando JumpStart
+    Crea un endpoint de SageMaker con Llama-2-70B usando DJL Inference
     """
     try:
         # Configurar región explícitamente
@@ -183,7 +154,7 @@ def create_sagemaker_endpoint():
             if e.response['Error']['Code'] != 'ValidationException':
                 raise
         
-        # Crear el modelo usando JumpStart
+        # Crear el modelo usando DJL
         model_name = 'llama-2-70b'
         try:
             sagemaker.describe_model(ModelName=model_name)
@@ -191,17 +162,25 @@ def create_sagemaker_endpoint():
         except ClientError:
             logger.info(f"Creando modelo {model_name}...")
             
-            # Usar JumpStart para Llama 2
-            model_package_arn = f"arn:aws:sagemaker:{region}:763104351884:model-package/jumpstart-dft-meta-textgeneration-llama-2-70b-1-0-0"
+            # Usar imagen de DJL para Llama 2
+            image_uri = f"763104351884.dkr.ecr.{region}.amazonaws.com/djl-inference:0.21.0-deepspeed0.8.3-cu117"
             
+            # Crear el modelo en tu cuenta
             sagemaker.create_model(
                 ModelName=model_name,
                 ExecutionRoleArn=role_arn,
                 PrimaryContainer={
-                    'ModelPackageName': model_package_arn,
+                    'Image': image_uri,
                     'Environment': {
                         'SAGEMAKER_CONTAINER_LOG_LEVEL': '20',
-                        'SAGEMAKER_REGION': region
+                        'SAGEMAKER_REGION': region,
+                        'MODEL_LOADING_TIMEOUT': '3600',
+                        'HF_MODEL_ID': 'meta-llama/Llama-2-70b-chat-hf',
+                        'HF_TASK': 'text-generation',
+                        'MAX_INPUT_LENGTH': '2048',
+                        'MAX_TOTAL_TOKENS': '4096',
+                        'HF_MODEL_QUANTIZE': 'bit8',
+                        'HUGGING_FACE_HUB_TOKEN': os.environ.get('HUGGING_FACE_HUB_TOKEN', '')
                     }
                 }
             )
@@ -219,7 +198,8 @@ def create_sagemaker_endpoint():
                     'InstanceType': 'ml.g5.12xlarge',
                     'InitialInstanceCount': 1,
                     'ModelName': model_name,
-                    'VariantName': 'AllTraffic'
+                    'VariantName': 'AllTraffic',
+                    'ContainerStartupHealthCheckTimeoutInSeconds': 3600
                 }]
             )
         
