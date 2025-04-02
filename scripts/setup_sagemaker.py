@@ -77,11 +77,23 @@ def attach_required_policies(iam_client, role_name):
                 "Effect": "Allow",
                 "Action": [
                     "ecr:BatchGetImage",
-                    "ecr:GetDownloadUrlForLayer"
+                    "ecr:GetDownloadUrlForLayer",
+                    "ecr:GetAuthorizationToken",
+                    "ecr:DescribeImages",
+                    "ecr:ListImages",
+                    "ecr:BatchCheckLayerAvailability"
                 ],
                 "Resource": [
-                    "arn:aws:ecr:*:456233644234:repository/jumpstart-inference-meta-textgeneration-llama-2-70b"
+                    f"arn:aws:ecr:*:456233644234:repository/*",
+                    f"arn:aws:ecr:*:763104351884:repository/*"
                 ]
+            },
+            {
+                "Effect": "Allow",
+                "Action": [
+                    "ecr:GetAuthorizationToken"
+                ],
+                "Resource": "*"
             }
         ]
     }
