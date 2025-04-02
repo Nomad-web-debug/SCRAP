@@ -69,10 +69,36 @@ def attach_required_policies(iam_client, role_name):
         'arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly'
     ]
     
-    # Política inline para acceder a la imagen específica de Llama 2
-    ecr_policy = {
+    # Política inline para acceder a JumpStart y ECR
+    jumpstart_policy = {
         "Version": "2012-10-17",
         "Statement": [
+            {
+                "Effect": "Allow",
+                "Action": [
+                    "sagemaker:CreateModel",
+                    "sagemaker:CreateEndpointConfig",
+                    "sagemaker:CreateEndpoint",
+                    "sagemaker:DescribeModel",
+                    "sagemaker:DescribeEndpointConfig",
+                    "sagemaker:DescribeEndpoint",
+                    "sagemaker:DeleteModel",
+                    "sagemaker:DeleteEndpointConfig",
+                    "sagemaker:DeleteEndpoint"
+                ],
+                "Resource": [
+                    f"arn:aws:sagemaker:*:{iam_client.meta.region_name}:*"
+                ]
+            },
+            {
+                "Effect": "Allow",
+                "Action": [
+                    "sagemaker:CreateModel"
+                ],
+                "Resource": [
+                    "arn:aws:sagemaker:*:763104351884:model-package/*"
+                ]
+            },
             {
                 "Effect": "Allow",
                 "Action": [
@@ -84,9 +110,8 @@ def attach_required_policies(iam_client, role_name):
                     "ecr:BatchCheckLayerAvailability"
                 ],
                 "Resource": [
-                    "arn:aws:ecr:us-east-1:456233644234:repository/jumpstart-inference-meta-textgeneration-llama-2-70b",
-                    "arn:aws:ecr:us-east-1:763104351884:repository/djl-inference",
-                    "arn:aws:ecr:us-east-1:763104351884:repository/jumpstart-dft-meta-textgeneration-llama-2-70b"
+                    "arn:aws:ecr:*:763104351884:repository/*",
+                    "arn:aws:ecr:*:456233644234:repository/*"
                 ]
             },
             {
@@ -111,14 +136,14 @@ def attach_required_policies(iam_client, role_name):
             if e.response['Error']['Code'] != 'EntityAlreadyExists':
                 raise
     
-    # Adjuntar política inline para ECR
+    # Adjuntar política inline para JumpStart y ECR
     try:
         iam_client.put_role_policy(
             RoleName=role_name,
-            PolicyName='ECRAccessForLlama2',
-            PolicyDocument=json.dumps(ecr_policy)
+            PolicyName='JumpStartAndECRAccess',
+            PolicyDocument=json.dumps(jumpstart_policy)
         )
-        logger.info("Política inline para ECR adjuntada al rol")
+        logger.info("Política inline para JumpStart y ECR adjuntada al rol")
     except Exception as e:
         logger.error(f"Error adjuntando política inline: {str(e)}")
         raise
