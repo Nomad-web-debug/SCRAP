@@ -125,7 +125,7 @@ def attach_required_policies(iam_client, role_name):
 
 def create_sagemaker_endpoint():
     """
-    Crea un endpoint de SageMaker con Llama-2-70B si no existe
+    Crea un endpoint de SageMaker con Llama-2-70B usando JumpStart
     """
     try:
         # Configurar región explícitamente
@@ -158,7 +158,7 @@ def create_sagemaker_endpoint():
             if e.response['Error']['Code'] != 'ValidationException':
                 raise
         
-        # Crear el modelo
+        # Crear el modelo usando JumpStart
         model_name = 'llama-2-70b'
         try:
             sagemaker.describe_model(ModelName=model_name)
@@ -166,19 +166,17 @@ def create_sagemaker_endpoint():
         except ClientError:
             logger.info(f"Creando modelo {model_name}...")
             
-            # Usar la imagen oficial de SageMaker para Llama 2
-            image_uri = f"456233644234.dkr.ecr.{region}.amazonaws.com/jumpstart-inference-meta-textgeneration-llama-2-70b:1.0.0"
+            # Usar JumpStart para Llama 2
+            model_package_arn = f"arn:aws:sagemaker:{region}:763104351884:model-package/jumpstart-dft-meta-textgeneration-llama-2-70b-1-0-0"
             
             sagemaker.create_model(
                 ModelName=model_name,
                 ExecutionRoleArn=role_arn,
                 PrimaryContainer={
-                    'Image': image_uri,
+                    'ModelPackageName': model_package_arn,
                     'Environment': {
                         'SAGEMAKER_CONTAINER_LOG_LEVEL': '20',
-                        'SAGEMAKER_REGION': region,
-                        'MAX_INPUT_LENGTH': '2048',
-                        'MAX_TOTAL_TOKENS': '4096'
+                        'SAGEMAKER_REGION': region
                     }
                 }
             )
