@@ -22,6 +22,10 @@ def get_or_create_role(iam_client):
         # Intentar obtener el rol
         response = iam_client.get_role(RoleName=role_name)
         logger.info(f"Rol {role_name} encontrado")
+        
+        # Asegurar que tenga los permisos necesarios
+        attach_required_policies(iam_client, role_name)
+        
         return response['Role']['Arn']
     except ClientError as e:
         if e.response['Error']['Code'] == 'NoSuchEntity':
@@ -49,15 +53,62 @@ def get_or_create_role(iam_client):
             )
             
             # Adjuntar políticas necesarias
-            iam_client.attach_role_policy(
-                RoleName=role_name,
-                PolicyArn='arn:aws:iam::aws:policy/AmazonSageMakerFullAccess'
-            )
+            attach_required_policies(iam_client, role_name)
             
             logger.info(f"Rol {role_name} creado exitosamente")
             return response['Role']['Arn']
         else:
             raise
+
+def attach_required_policies(iam_client, role_name):
+    """
+    Adjunta todas las políticas necesarias al rol
+    """
+    required_policies = [
+        'arn:aws:iam::aws:policy/AmazonSageMakerFullAccess',
+        'arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly'
+    ]
+    
+    # Política inline para acceder a la imagen específica de Llama 2
+    ecr_policy = {
+        "Version": "2012-10-17",
+        "Statement": [
+            {
+                "Effect": "Allow",
+                "Action": [
+                    "ecr:BatchGetImage",
+                    "ecr:GetDownloadUrlForLayer"
+                ],
+                "Resource": [
+                    "arn:aws:ecr:*:456233644234:repository/jumpstart-inference-meta-textgeneration-llama-2-70b"
+                ]
+            }
+        ]
+    }
+    
+    # Adjuntar políticas AWS administradas
+    for policy_arn in required_policies:
+        try:
+            iam_client.attach_role_policy(
+                RoleName=role_name,
+                PolicyArn=policy_arn
+            )
+            logger.info(f"Política {policy_arn} adjuntada al rol")
+        except ClientError as e:
+            if e.response['Error']['Code'] != 'EntityAlreadyExists':
+                raise
+    
+    # Adjuntar política inline para ECR
+    try:
+        iam_client.put_role_policy(
+            RoleName=role_name,
+            PolicyName='ECRAccessForLlama2',
+            PolicyDocument=json.dumps(ecr_policy)
+        )
+        logger.info("Política inline para ECR adjuntada al rol")
+    except Exception as e:
+        logger.error(f"Error adjuntando política inline: {str(e)}")
+        raise
 
 def create_sagemaker_endpoint():
     """
