@@ -84,8 +84,8 @@ def attach_required_policies(iam_client, role_name):
                     "ecr:BatchCheckLayerAvailability"
                 ],
                 "Resource": [
-                    f"arn:aws:ecr:*:456233644234:repository/*",
-                    f"arn:aws:ecr:*:763104351884:repository/*"
+                    "arn:aws:ecr:us-east-1:456233644234:repository/jumpstart-inference-meta-textgeneration-llama-2-70b",
+                    "arn:aws:ecr:us-east-1:763104351884:repository/djl-inference"
                 ]
             },
             {
