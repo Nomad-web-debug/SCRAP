@@ -85,7 +85,8 @@ def attach_required_policies(iam_client, role_name):
                 ],
                 "Resource": [
                     "arn:aws:ecr:us-east-1:456233644234:repository/jumpstart-inference-meta-textgeneration-llama-2-70b",
-                    "arn:aws:ecr:us-east-1:763104351884:repository/djl-inference"
+                    "arn:aws:ecr:us-east-1:763104351884:repository/djl-inference",
+                    "arn:aws:ecr:us-east-1:763104351884:repository/jumpstart-dft-meta-textgeneration-llama-2-70b"
                 ]
             },
             {
