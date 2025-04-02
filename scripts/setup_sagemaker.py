@@ -102,20 +102,19 @@ def create_sagemaker_endpoint():
         except ClientError:
             logger.info(f"Creando modelo {model_name}...")
             
-            # Usar la imagen oficial de HuggingFace para SageMaker
-            image_uri = f"763104351884.dkr.ecr.{region}.amazonaws.com/huggingface-pytorch-inference:1.13.1-transformers4.26.0-gpu-py39-cu117-ubuntu20.04"
+            # Usar la imagen de AWS para Llama 2
+            image_uri = f"{account_id}.dkr.ecr.{region}.amazonaws.com/jumpstart-dft-meta-textgeneration-llama-2-70b:1.0.0"
             
             sagemaker.create_model(
                 ModelName=model_name,
                 ExecutionRoleArn=role_arn,
                 PrimaryContainer={
                     'Image': image_uri,
-                    'ModelDataUrl': 's3://huggingface-models-prod/meta-llama/Llama-2-70b/pytorch_model.bin',
                     'Environment': {
                         'SAGEMAKER_CONTAINER_LOG_LEVEL': '20',
                         'SAGEMAKER_REGION': region,
-                        'HF_MODEL_ID': 'meta-llama/Llama-2-70b',
-                        'HF_TASK': 'text-generation'
+                        'MAX_INPUT_LENGTH': '2048',
+                        'MAX_TOTAL_TOKENS': '4096'
                     }
                 }
             )
@@ -133,7 +132,11 @@ def create_sagemaker_endpoint():
                     'InstanceType': 'ml.g5.12xlarge',
                     'InitialInstanceCount': 1,
                     'ModelName': model_name,
-                    'VariantName': 'AllTraffic'
+                    'VariantName': 'AllTraffic',
+                    'ServerlessConfig': {
+                        'MaxConcurrency': 1,
+                        'MemorySizeInMB': 6144
+                    }
                 }]
             )
         
@@ -153,6 +156,7 @@ def create_sagemaker_endpoint():
                 break
             elif status == 'Failed':
                 raise Exception(f"Error creando endpoint: {response.get('FailureReason', 'Unknown error')}")
+            logger.info(f"Esperando a que el endpoint esté listo... Estado actual: {status}")
             time.sleep(30)
         
         return endpoint_name
