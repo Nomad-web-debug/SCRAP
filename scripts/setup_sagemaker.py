@@ -102,8 +102,8 @@ def create_sagemaker_endpoint():
         except ClientError:
             logger.info(f"Creando modelo {model_name}...")
             
-            # Usar la imagen de AWS para Llama 2
-            image_uri = f"{account_id}.dkr.ecr.{region}.amazonaws.com/jumpstart-dft-meta-textgeneration-llama-2-70b:1.0.0"
+            # Usar la imagen oficial de SageMaker para Llama 2
+            image_uri = f"456233644234.dkr.ecr.{region}.amazonaws.com/jumpstart-inference-meta-textgeneration-llama-2-70b:1.0.0"
             
             sagemaker.create_model(
                 ModelName=model_name,
@@ -132,11 +132,7 @@ def create_sagemaker_endpoint():
                     'InstanceType': 'ml.g5.12xlarge',
                     'InitialInstanceCount': 1,
                     'ModelName': model_name,
-                    'VariantName': 'AllTraffic',
-                    'ServerlessConfig': {
-                        'MaxConcurrency': 1,
-                        'MemorySizeInMB': 6144
-                    }
+                    'VariantName': 'AllTraffic'
                 }]
             )
         
