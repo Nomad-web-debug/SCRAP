@@ -3,57 +3,41 @@ name: Configurar Endpoint SageMaker
 on:
   workflow_dispatch:
     inputs:
-      aws_region:
-        description: 'Región de AWS'
+      instance_type:
+        description: 'Tipo de instancia SageMaker (ej: ml.g4dn.xlarge)'
         required: true
-        default: 'us-east-1'
-        type: string
+        default: 'ml.g4dn.xlarge'
 
-permissions:
-  id-token: write
-  contents: read
+env:
+  AWS_DEFAULT_REGION: us-east-1
+  AWS_REGION: us-east-1
 
 jobs:
   setup-endpoint:
     runs-on: ubuntu-latest
     
-    env:
-      AWS_DEFAULT_REGION: ${{ inputs.aws_region }}
-      AWS_REGION: ${{ inputs.aws_region }}
-    
     steps:
-    - uses: actions/checkout@v3
-    
+    - name: Checkout repository
+      uses: actions/checkout@v3
+
     - name: Configurar Python
       uses: actions/setup-python@v4
       with:
         python-version: '3.10'
-        cache: 'pip'
-    
-    - name: Instalar dependencias
-      run: |
-        python -m pip install --upgrade pip
-        pip install boto3
-    
+        
     - name: Configurar credenciales AWS
       uses: aws-actions/configure-aws-credentials@v4
       with:
         aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-        aws-region: ${{ inputs.aws_region }}
-    
-    - name: Verificar configuración AWS
-      run: |
-        echo "Verificando configuración de AWS..."
-        echo "AWS_REGION=${AWS_REGION}"
-        echo "AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION}"
-        aws configure list
-    
-    - name: Configurar endpoint de SageMaker
-      run: |
-        # Asegurar que la región esté configurada
-        export AWS_DEFAULT_REGION="${{ inputs.aws_region }}"
-        export AWS_REGION="${{ inputs.aws_region }}"
+        aws-region: us-east-1
         
-        # Ejecutar script
-        python scripts/setup_sagemaker.py 
+    - name: Instalar dependencias
+      run: |
+        python -m pip install --upgrade pip
+        pip install boto3 requests
+
+    - name: Configurar endpoint de SageMaker
+      env:
+        SAGEMAKER_INSTANCE_TYPE: ${{ github.event.inputs.instance_type }}
+      run: python scripts/setup_sagemaker.py 

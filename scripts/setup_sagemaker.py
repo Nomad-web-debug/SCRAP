@@ -121,11 +121,14 @@ def attach_required_policies(iam_client, role_name):
 
 def create_sagemaker_endpoint():
     """
-    Crea un endpoint de SageMaker con Llama-2-70B usando DJL Inference
+    Crea un endpoint de SageMaker con Llama-2-13B usando JumpStart
     """
     try:
         # Configurar región explícitamente
         region = os.environ.get('AWS_REGION', 'us-east-1')
+        
+        # Obtener tipo de instancia de las variables de entorno o usar valor por defecto
+        instance_type = os.environ.get('SAGEMAKER_INSTANCE_TYPE', 'ml.g4dn.xlarge')
         
         # Inicializar clientes con región específica
         session = boto3.Session(region_name=region)
@@ -134,6 +137,7 @@ def create_sagemaker_endpoint():
         sts = session.client('sts')
         
         logger.info(f"Configurando servicios en la región: {region}")
+        logger.info(f"Usando tipo de instancia: {instance_type}")
         
         # Obtener ID de cuenta
         account_id = sts.get_caller_identity()["Account"]
@@ -143,7 +147,7 @@ def create_sagemaker_endpoint():
         role_arn = get_or_create_role(iam)
         logger.info(f"Usando rol: {role_arn}")
         
-        endpoint_name = 'llama-2-70b-endpoint'
+        endpoint_name = 'llama-2-13b-endpoint'
         
         # Verificar si el endpoint ya existe
         try:
@@ -154,16 +158,16 @@ def create_sagemaker_endpoint():
             if e.response['Error']['Code'] != 'ValidationException':
                 raise
         
-        # Crear el modelo usando DJL
-        model_name = 'llama-2-70b'
+        # Crear el modelo usando JumpStart
+        model_name = 'llama-2-13b'
         try:
             sagemaker.describe_model(ModelName=model_name)
             logger.info(f"El modelo {model_name} ya existe")
         except ClientError:
             logger.info(f"Creando modelo {model_name}...")
             
-            # Usar imagen de DJL para Llama 2
-            image_uri = f"763104351884.dkr.ecr.{region}.amazonaws.com/djl-inference:0.21.0-deepspeed0.8.3-cu117"
+            # Usar la imagen de SageMaker para Llama 2 13B
+            image_uri = f"976280784186.dkr.ecr.{region}.amazonaws.com/jumpstart-dft-meta-textgeneration-llama-2-13b:1.0.0"
             
             # Crear el modelo en tu cuenta
             sagemaker.create_model(
@@ -174,13 +178,8 @@ def create_sagemaker_endpoint():
                     'Environment': {
                         'SAGEMAKER_CONTAINER_LOG_LEVEL': '20',
                         'SAGEMAKER_REGION': region,
-                        'MODEL_LOADING_TIMEOUT': '3600',
-                        'HF_MODEL_ID': 'meta-llama/Llama-2-70b-chat-hf',
-                        'HF_TASK': 'text-generation',
                         'MAX_INPUT_LENGTH': '2048',
-                        'MAX_TOTAL_TOKENS': '4096',
-                        'HF_MODEL_QUANTIZE': 'bit8',
-                        'HUGGING_FACE_HUB_TOKEN': os.environ.get('HUGGING_FACE_HUB_TOKEN', '')
+                        'MAX_TOTAL_TOKENS': '4096'
                     }
                 }
             )
@@ -195,7 +194,7 @@ def create_sagemaker_endpoint():
             sagemaker.create_endpoint_config(
                 EndpointConfigName=endpoint_config_name,
                 ProductionVariants=[{
-                    'InstanceType': 'ml.g5.12xlarge',
+                    'InstanceType': instance_type,
                     'InitialInstanceCount': 1,
                     'ModelName': model_name,
                     'VariantName': 'AllTraffic',
