@@ -21,6 +21,7 @@ jobs:
       AWS_REGION: us-east-1
       AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      HUGGINGFACE_HUB_TOKEN: ${{ secrets.HUGGINGFACE_HUB_TOKEN }}
       
     steps:
     - uses: actions/checkout@v3
@@ -34,6 +35,14 @@ jobs:
       run: |
         python -m pip install --upgrade pip
         pip install boto3
+        
+    - name: Verificar token de Hugging Face
+      run: |
+        if [ -z "$HUGGINGFACE_HUB_TOKEN" ]; then
+          echo "Error: HUGGINGFACE_HUB_TOKEN no está configurado"
+          echo "Por favor, configura el token en los secrets del repositorio"
+          exit 1
+        fi
         
     - name: Configurar modelo seleccionado
       run: |
