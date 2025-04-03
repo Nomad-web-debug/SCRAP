@@ -234,16 +234,21 @@ def save_endpoint_state(endpoint_name: str, modelo: str):
         json.dump(state, f, ensure_ascii=False, indent=2)
     logger.info(f"Estado del endpoint guardado en endpoint_state.json")
 
+def get_active_endpoint():
+    """
+    Obtiene el endpoint activo desde el archivo de estado
+    """
+    try:
+        with open('endpoint_state.json', 'r') as f:
+            state = json.load(f)
+            return state.get('endpoint_name'), state.get('modelo')
+    except FileNotFoundError:
+        return None, None
+
 def create_sagemaker_endpoint(modelo_elegido='13b', force_recreate=False):
     """
     Crea un endpoint de SageMaker con el modelo Llama 2 especificado
-    Args:
-        modelo_elegido (str): Versión del modelo ('7b', '13b', '70b')
-        force_recreate (bool): Si True, elimina y recrea el endpoint aunque exista
     """
-    sagemaker = None
-    model_name = None
-    
     try:
         # Verificar que el token está configurado
         hf_token = os.environ.get('HUGGINGFACE_HUB_TOKEN')
@@ -266,23 +271,19 @@ def create_sagemaker_endpoint(modelo_elegido='13b', force_recreate=False):
         # Obtener o crear rol
         role_arn = get_or_create_role(iam)
         
+        # Verificar y eliminar endpoint anterior si existe
+        active_endpoint, active_model = get_active_endpoint()
+        if active_endpoint:
+            logger.info(f"Eliminando endpoint anterior: {active_endpoint} (Modelo: {active_model})")
+            cleanup_resources(sagemaker, MODELO_CONFIG[active_model]['nombre'])
+            # Esperar a que se elimine completamente
+            time.sleep(10)  # Dar tiempo para que AWS limpie los recursos
+
         # Nombres de recursos
         model_name = config['nombre']
         endpoint_config_name = f"{model_name}-config"
         endpoint_name = f"{model_name}-endpoint"
-        
-        # Eliminar endpoint existente si se solicita recreación
-        if force_recreate:
-            eliminar_endpoint_existente(sagemaker, endpoint_name)
-        else:
-            try:
-                response = sagemaker.describe_endpoint(EndpointName=endpoint_name)
-                logger.info(f"El endpoint {endpoint_name} ya existe y está en estado: {response['EndpointStatus']}")
-                return endpoint_name
-            except ClientError as e:
-                if e.response['Error']['Code'] != 'ValidationException':
-                    raise
-        
+
         # Crear modelo
         logger.info(f"Creando modelo {model_name}...")
         
