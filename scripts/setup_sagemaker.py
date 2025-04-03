@@ -19,13 +19,13 @@ MODELO_CONFIG = {
     '7b': {
         'nombre': 'llama-2-7b',
         'modelo_hf': 'meta-llama/Llama-2-7b-chat-hf',
-        'instancia': 'ml.g4dn.xlarge',
+        'instancia': 'ml.g5.xlarge',
         'descripcion': 'Modelo más ligero y económico'
     },
     '13b': {
         'nombre': 'llama-2-13b',
         'modelo_hf': 'meta-llama/Llama-2-13b-chat-hf',
-        'instancia': 'ml.g4dn.xlarge',
+        'instancia': 'ml.g5.2xlarge',
         'descripcion': 'Balance entre rendimiento y costo'
     },
     '70b': {
@@ -257,6 +257,17 @@ def get_active_endpoint():
     except FileNotFoundError:
         return None, None
 
+def list_active_endpoints(sagemaker):
+    """
+    Lista todos los endpoints activos
+    """
+    try:
+        response = sagemaker.list_endpoints()
+        return [endpoint['EndpointName'] for endpoint in response['Endpoints']]
+    except Exception as e:
+        logger.error(f"Error listando endpoints: {str(e)}")
+        return []
+
 def create_sagemaker_endpoint(modelo_elegido='13b', force_recreate=False):
     """
     Crea un endpoint de SageMaker con el modelo Llama 2 especificado
@@ -283,20 +294,23 @@ def create_sagemaker_endpoint(modelo_elegido='13b', force_recreate=False):
         # Obtener o crear rol
         role_arn = get_or_create_role(iam)
         
-        # Verificar y eliminar endpoint anterior si existe
-        active_endpoint, active_model = get_active_endpoint()
-        if active_endpoint:
-            logger.info(f"Eliminando endpoint anterior: {active_endpoint} (Modelo: {active_model})")
-            cleanup_resources(sagemaker, MODELO_CONFIG[active_model]['nombre'])
+        # Listar y eliminar todos los endpoints activos
+        active_endpoints = list_active_endpoints(sagemaker)
+        if active_endpoints:
+            logger.info(f"Encontrados {len(active_endpoints)} endpoints activos")
+            for endpoint in active_endpoints:
+                logger.info(f"Eliminando endpoint: {endpoint}")
+                try:
+                    sagemaker.delete_endpoint(EndpointName=endpoint)
+                    waiter = sagemaker.get_waiter('endpoint_deleted')
+                    waiter.wait(EndpointName=endpoint)
+                    logger.info(f"Endpoint {endpoint} eliminado correctamente")
+                except Exception as e:
+                    logger.error(f"Error eliminando endpoint {endpoint}: {str(e)}")
             
-            # Verificar que el endpoint anterior se haya eliminado completamente
-            try:
-                sagemaker.describe_endpoint(EndpointName=active_endpoint)
-                logger.error("El endpoint anterior aún existe. Esperando más tiempo...")
-                time.sleep(30)  # Esperar más tiempo si aún existe
-            except ClientError as e:
-                if e.response['Error']['Code'] == 'ResourceNotFoundException':
-                    logger.info("Endpoint anterior eliminado correctamente")
+            # Esperar a que todos los recursos se liberen
+            logger.info("Esperando a que AWS libere los recursos...")
+            time.sleep(60)  # Esperar 1 minuto para asegurar que los recursos se liberen
 
         # Nombres de recursos
         model_name = config['nombre']
