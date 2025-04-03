@@ -27,6 +27,7 @@ def get_or_create_role(iam_client):
         attach_required_policies(iam_client, role_name)
         
         return response['Role']['Arn']
+        
     except ClientError as e:
         if e.response['Error']['Code'] == 'NoSuchEntity':
             # Crear el rol si no existe
@@ -46,17 +47,31 @@ def get_or_create_role(iam_client):
                 ]
             }
             
-            # Crear el rol
-            response = iam_client.create_role(
-                RoleName=role_name,
-                AssumeRolePolicyDocument=json.dumps(trust_policy)
-            )
-            
-            # Adjuntar políticas necesarias
-            attach_required_policies(iam_client, role_name)
-            
-            logger.info(f"Rol {role_name} creado exitosamente")
-            return response['Role']['Arn']
+            try:
+                # Crear el rol
+                response = iam_client.create_role(
+                    RoleName=role_name,
+                    AssumeRolePolicyDocument=json.dumps(trust_policy)
+                )
+                
+                # Adjuntar políticas necesarias
+                attach_required_policies(iam_client, role_name)
+                
+                logger.info(f"Rol {role_name} creado exitosamente")
+                return response['Role']['Arn']
+                
+            except ClientError as create_error:
+                if create_error.response['Error']['Code'] == 'EntityAlreadyExists':
+                    # Si el rol ya existe mientras intentamos crearlo, intentar obtenerlo de nuevo
+                    response = iam_client.get_role(RoleName=role_name)
+                    logger.info(f"Usando rol {role_name} existente")
+                    
+                    # Asegurar que tenga los permisos necesarios
+                    attach_required_policies(iam_client, role_name)
+                    
+                    return response['Role']['Arn']
+                else:
+                    raise create_error
         else:
             raise
 
