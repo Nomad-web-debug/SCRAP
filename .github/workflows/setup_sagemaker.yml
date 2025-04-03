@@ -3,41 +3,48 @@ name: Configurar Endpoint SageMaker
 on:
   workflow_dispatch:
     inputs:
-      instance_type:
-        description: 'Tipo de instancia SageMaker (ej: ml.g4dn.xlarge)'
+      modelo_llama:
+        description: 'Selecciona el modelo de Llama 2'
         required: true
-        default: 'ml.g4dn.xlarge'
-
-env:
-  AWS_DEFAULT_REGION: us-east-1
-  AWS_REGION: us-east-1
+        type: choice
+        options:
+          - 'Llama 2 7B - Ligero y económico (ml.g4dn.xlarge)'
+          - 'Llama 2 13B - Balance rendimiento/costo (ml.g4dn.xlarge)'
+          - 'Llama 2 70B - Máxima potencia (ml.g5.12xlarge)'
+        default: 'Llama 2 13B - Balance rendimiento/costo (ml.g4dn.xlarge)'
 
 jobs:
   setup-endpoint:
     runs-on: ubuntu-latest
     
+    env:
+      AWS_REGION: us-east-1
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v3
-
+    - uses: actions/checkout@v3
+    
     - name: Configurar Python
       uses: actions/setup-python@v4
       with:
         python-version: '3.10'
         
-    - name: Configurar credenciales AWS
-      uses: aws-actions/configure-aws-credentials@v4
-      with:
-        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-        aws-region: us-east-1
-        
     - name: Instalar dependencias
       run: |
         python -m pip install --upgrade pip
-        pip install boto3 requests
-
-    - name: Configurar endpoint de SageMaker
-      env:
-        SAGEMAKER_INSTANCE_TYPE: ${{ github.event.inputs.instance_type }}
-      run: python scripts/setup_sagemaker.py 
+        pip install boto3
+        
+    - name: Configurar modelo seleccionado
+      run: |
+        # Extraer versión del modelo del input
+        if [[ "${{ github.event.inputs.modelo_llama }}" == *"7B"* ]]; then
+          echo "MODELO_VERSION=7b" >> $GITHUB_ENV
+        elif [[ "${{ github.event.inputs.modelo_llama }}" == *"13B"* ]]; then
+          echo "MODELO_VERSION=13b" >> $GITHUB_ENV
+        else
+          echo "MODELO_VERSION=70b" >> $GITHUB_ENV
+        fi
+        
+    - name: Configurar Endpoint SageMaker
+      run: python scripts/setup_sagemaker.py --modelo ${{ env.MODELO_VERSION }} 
