@@ -84,46 +84,43 @@ def attach_required_policies(iam_client, role_name):
         'arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly'
     ]
     
-    # Política inline para acceder a JumpStart y ECR
-    jumpstart_policy = {
+    # Política inline para acceder a SageMaker y ECR
+    sagemaker_policy = {
         "Version": "2012-10-17",
         "Statement": [
             {
                 "Effect": "Allow",
                 "Action": [
-                    "sagemaker:*"
+                    "sagemaker:*",
+                    "ecr:GetAuthorizationToken",
+                    "ecr:BatchGetImage",
+                    "ecr:GetDownloadUrlForLayer",
+                    "ecr:BatchCheckLayerAvailability"
                 ],
                 "Resource": "*"
             },
             {
                 "Effect": "Allow",
                 "Action": [
-                    "sagemaker:CreateModel",
-                    "sagemaker:CreateEndpointConfig",
-                    "sagemaker:CreateEndpoint"
-                ],
-                "Resource": [
-                    f"arn:aws:sagemaker:*:*:model/*",
-                    f"arn:aws:sagemaker:*:*:endpoint/*",
-                    f"arn:aws:sagemaker:*:*:endpoint-config/*"
-                ]
-            },
-            {
-                "Effect": "Allow",
-                "Action": [
-                    "sagemaker:CreateModel"
-                ],
-                "Resource": [
-                    "arn:aws:sagemaker:*:865070037744:model-package/llama-2-13b*"
-                ]
-            },
-            {
-                "Effect": "Allow",
-                "Action": [
-                    "iam:PassRole"
+                    "iam:PassRole",
+                    "iam:CreateRole",
+                    "iam:DeleteRole"
                 ],
                 "Resource": [
                     "arn:aws:iam::*:role/AmazonSageMaker*"
+                ]
+            },
+            {
+                "Effect": "Allow",
+                "Action": [
+                    "s3:GetObject",
+                    "s3:PutObject",
+                    "s3:DeleteObject",
+                    "s3:ListBucket"
+                ],
+                "Resource": [
+                    "arn:aws:s3:::sagemaker-*",
+                    "arn:aws:s3:::huggingface-*"
                 ]
             }
         ]
@@ -141,21 +138,21 @@ def attach_required_policies(iam_client, role_name):
             if e.response['Error']['Code'] != 'EntityAlreadyExists':
                 raise
     
-    # Adjuntar política inline para JumpStart y ECR
+    # Adjuntar política inline para SageMaker y ECR
     try:
         iam_client.put_role_policy(
             RoleName=role_name,
-            PolicyName='JumpStartAndECRAccess',
-            PolicyDocument=json.dumps(jumpstart_policy)
+            PolicyName='SageMakerAndECRAccess',
+            PolicyDocument=json.dumps(sagemaker_policy)
         )
-        logger.info("Política inline para JumpStart y ECR adjuntada al rol")
+        logger.info("Política inline para SageMaker y ECR adjuntada al rol")
     except Exception as e:
         logger.error(f"Error adjuntando política inline: {str(e)}")
         raise
 
 def create_sagemaker_endpoint():
     """
-    Crea un endpoint de SageMaker con Llama-2-13B usando JumpStart
+    Crea un endpoint de SageMaker con Llama-2-13B
     """
     try:
         # Configurar región explícitamente
@@ -192,7 +189,7 @@ def create_sagemaker_endpoint():
             if e.response['Error']['Code'] != 'ValidationException':
                 raise
         
-        # Crear el modelo usando JumpStart
+        # Crear el modelo usando la imagen de SageMaker
         model_name = 'llama-2-13b'
         try:
             sagemaker.describe_model(ModelName=model_name)
@@ -200,15 +197,24 @@ def create_sagemaker_endpoint():
         except ClientError:
             logger.info(f"Creando modelo {model_name}...")
             
-            # Usar el modelo preempaquetado de JumpStart
-            model_package_arn = f"arn:aws:sagemaker:{region}:865070037744:model-package/llama-2-13b-v1"
+            # Usar la imagen de SageMaker para Llama 2 13B
+            image_uri = f"763104351884.dkr.ecr.{region}.amazonaws.com/huggingface-pytorch-inference:2.0.0-transformers4.28.1-gpu-py39-cu118"
             
             # Crear el modelo en tu cuenta
             sagemaker.create_model(
                 ModelName=model_name,
                 ExecutionRoleArn=role_arn,
                 PrimaryContainer={
-                    'ModelPackageName': model_package_arn
+                    'Image': image_uri,
+                    'Environment': {
+                        'SAGEMAKER_CONTAINER_LOG_LEVEL': '20',
+                        'SAGEMAKER_REGION': region,
+                        'HF_MODEL_ID': 'meta-llama/Llama-2-13b-chat-hf',
+                        'HF_TASK': 'text-generation',
+                        'MAX_INPUT_LENGTH': '2048',
+                        'MAX_TOTAL_TOKENS': '4096',
+                        'HF_MODEL_QUANTIZE': 'bit8'
+                    }
                 }
             )
         
