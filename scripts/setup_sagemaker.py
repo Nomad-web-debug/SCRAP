@@ -4,6 +4,7 @@ import time
 import logging
 import os
 from botocore.exceptions import ClientError
+import argparse
 
 # Configurar logging
 logging.basicConfig(
@@ -11,6 +12,28 @@ logging.basicConfig(
     format='%(asctime)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+
+# Configuración de modelos disponibles
+MODELO_CONFIG = {
+    '7b': {
+        'nombre': 'llama-2-7b',
+        'modelo_hf': 'meta-llama/Llama-2-7b-chat-hf',
+        'instancia': 'ml.g4dn.xlarge',
+        'descripcion': 'Modelo más ligero y económico'
+    },
+    '13b': {
+        'nombre': 'llama-2-13b',
+        'modelo_hf': 'meta-llama/Llama-2-13b-chat-hf',
+        'instancia': 'ml.g4dn.xlarge',
+        'descripcion': 'Balance entre rendimiento y costo'
+    },
+    '70b': {
+        'nombre': 'llama-2-70b',
+        'modelo_hf': 'meta-llama/Llama-2-70b-chat-hf',
+        'instancia': 'ml.g5.12xlarge',
+        'descripcion': 'Modelo más potente y preciso'
+    }
+}
 
 def get_or_create_role(iam_client):
     """
@@ -150,93 +173,104 @@ def attach_required_policies(iam_client, role_name):
         logger.error(f"Error adjuntando política inline: {str(e)}")
         raise
 
-def create_sagemaker_endpoint():
+def eliminar_endpoint_existente(sagemaker, endpoint_name):
     """
-    Crea un endpoint de SageMaker con Llama-2-13B
+    Elimina un endpoint existente si existe
     """
     try:
-        # Configurar región explícitamente
+        logger.info(f"Verificando si existe el endpoint {endpoint_name}...")
+        sagemaker.describe_endpoint(EndpointName=endpoint_name)
+        logger.info(f"Eliminando endpoint existente {endpoint_name}...")
+        sagemaker.delete_endpoint(EndpointName=endpoint_name)
+        sagemaker.get_waiter('endpoint_deleted').wait(EndpointName=endpoint_name)
+        logger.info(f"Endpoint {endpoint_name} eliminado correctamente")
+    except ClientError as e:
+        if e.response['Error']['Code'] != 'ValidationException':
+            raise
+
+def create_sagemaker_endpoint(modelo_elegido='13b', force_recreate=False):
+    """
+    Crea un endpoint de SageMaker con el modelo Llama 2 especificado
+    Args:
+        modelo_elegido (str): Versión del modelo ('7b', '13b', '70b')
+        force_recreate (bool): Si True, elimina y recrea el endpoint aunque exista
+    """
+    try:
+        # Verificar que el token está configurado
+        hf_token = os.environ.get('HUGGINGFACE_HUB_TOKEN')
+        if not hf_token:
+            raise ValueError("HUGGINGFACE_HUB_TOKEN no está configurado. Por favor, configura la variable de entorno.")
+
+        # Obtener configuración del modelo
+        if modelo_elegido not in MODELO_CONFIG:
+            raise ValueError(f"Modelo no válido. Opciones disponibles: {', '.join(MODELO_CONFIG.keys())}")
+        
+        config = MODELO_CONFIG[modelo_elegido]
+        logger.info(f"Configurando modelo {config['nombre']} ({config['descripcion']})")
+        
+        # Configurar región y servicios
         region = os.environ.get('AWS_REGION', 'us-east-1')
-        
-        # Obtener tipo de instancia de las variables de entorno o usar valor por defecto
-        instance_type = os.environ.get('SAGEMAKER_INSTANCE_TYPE', 'ml.g4dn.xlarge')
-        
-        # Inicializar clientes con región específica
         session = boto3.Session(region_name=region)
         sagemaker = session.client('sagemaker')
         iam = session.client('iam')
-        sts = session.client('sts')
         
-        logger.info(f"Configurando servicios en la región: {region}")
-        logger.info(f"Usando tipo de instancia: {instance_type}")
-        
-        # Obtener ID de cuenta
-        account_id = sts.get_caller_identity()["Account"]
-        logger.info(f"ID de cuenta AWS: {account_id}")
-        
-        # Obtener o crear rol de ejecución
+        # Obtener o crear rol
         role_arn = get_or_create_role(iam)
-        logger.info(f"Usando rol: {role_arn}")
         
-        endpoint_name = 'llama-2-13b-endpoint'
+        # Nombres de recursos
+        model_name = config['nombre']
+        endpoint_config_name = f"{model_name}-config"
+        endpoint_name = f"{model_name}-endpoint"
         
-        # Verificar si el endpoint ya existe
-        try:
-            response = sagemaker.describe_endpoint(EndpointName=endpoint_name)
-            logger.info(f"El endpoint {endpoint_name} ya existe")
-            return endpoint_name
-        except ClientError as e:
-            if e.response['Error']['Code'] != 'ValidationException':
-                raise
+        # Eliminar endpoint existente si se solicita recreación
+        if force_recreate:
+            eliminar_endpoint_existente(sagemaker, endpoint_name)
+        else:
+            try:
+                response = sagemaker.describe_endpoint(EndpointName=endpoint_name)
+                logger.info(f"El endpoint {endpoint_name} ya existe y está en estado: {response['EndpointStatus']}")
+                return endpoint_name
+            except ClientError as e:
+                if e.response['Error']['Code'] != 'ValidationException':
+                    raise
         
-        # Crear el modelo usando la imagen de SageMaker
-        model_name = 'llama-2-13b'
-        try:
-            sagemaker.describe_model(ModelName=model_name)
-            logger.info(f"El modelo {model_name} ya existe")
-        except ClientError:
-            logger.info(f"Creando modelo {model_name}...")
-            
-            # Usar la imagen de SageMaker para Llama 2 13B
-            image_uri = f"763104351884.dkr.ecr.{region}.amazonaws.com/huggingface-pytorch-inference:2.0.0-transformers4.28.1-gpu-py39-cu118"
-            
-            # Crear el modelo en tu cuenta
-            sagemaker.create_model(
-                ModelName=model_name,
-                ExecutionRoleArn=role_arn,
-                PrimaryContainer={
-                    'Image': image_uri,
-                    'Environment': {
-                        'SAGEMAKER_CONTAINER_LOG_LEVEL': '20',
-                        'SAGEMAKER_REGION': region,
-                        'HF_MODEL_ID': 'meta-llama/Llama-2-13b-chat-hf',
-                        'HF_TASK': 'text-generation',
-                        'MAX_INPUT_LENGTH': '2048',
-                        'MAX_TOTAL_TOKENS': '4096',
-                        'HF_MODEL_QUANTIZE': 'bit8'
-                    }
+        # Crear modelo
+        logger.info(f"Creando modelo {model_name}...")
+        image_uri = f"763104351884.dkr.ecr.{region}.amazonaws.com/huggingface-pytorch-inference:1.13.1-transformers4.26.0-gpu-py39-cu117"
+        
+        sagemaker.create_model(
+            ModelName=model_name,
+            ExecutionRoleArn=role_arn,
+            PrimaryContainer={
+                'Image': image_uri,
+                'Environment': {
+                    'SAGEMAKER_CONTAINER_LOG_LEVEL': '20',
+                    'SAGEMAKER_REGION': region,
+                    'HF_MODEL_ID': config['modelo_hf'],
+                    'HF_TASK': 'text-generation',
+                    'MAX_INPUT_LENGTH': '2048',
+                    'MAX_TOTAL_TOKENS': '4096',
+                    'HF_MODEL_QUANTIZE': 'bit8',
+                    'HUGGINGFACE_HUB_TOKEN': hf_token
                 }
-            )
+            }
+        )
         
         # Crear configuración del endpoint
-        endpoint_config_name = f'{endpoint_name}-config'
-        try:
-            sagemaker.describe_endpoint_config(EndpointConfigName=endpoint_config_name)
-            logger.info(f"La configuración {endpoint_config_name} ya existe")
-        except ClientError:
-            logger.info(f"Creando configuración del endpoint {endpoint_config_name}...")
-            sagemaker.create_endpoint_config(
-                EndpointConfigName=endpoint_config_name,
-                ProductionVariants=[{
-                    'InstanceType': instance_type,
-                    'InitialInstanceCount': 1,
-                    'ModelName': model_name,
+        logger.info(f"Creando configuración del endpoint...")
+        sagemaker.create_endpoint_config(
+            EndpointConfigName=endpoint_config_name,
+            ProductionVariants=[
+                {
                     'VariantName': 'AllTraffic',
-                    'ContainerStartupHealthCheckTimeoutInSeconds': 3600
-                }]
-            )
+                    'ModelName': model_name,
+                    'InstanceType': config['instancia'],
+                    'InitialInstanceCount': 1
+                }
+            ]
+        )
         
-        # Crear el endpoint
+        # Crear endpoint
         logger.info(f"Creando endpoint {endpoint_name}...")
         sagemaker.create_endpoint(
             EndpointName=endpoint_name,
@@ -244,17 +278,11 @@ def create_sagemaker_endpoint():
         )
         
         # Esperar a que el endpoint esté listo
-        while True:
-            response = sagemaker.describe_endpoint(EndpointName=endpoint_name)
-            status = response['EndpointStatus']
-            if status == 'InService':
-                logger.info(f"Endpoint {endpoint_name} creado exitosamente")
-                break
-            elif status == 'Failed':
-                raise Exception(f"Error creando endpoint: {response.get('FailureReason', 'Unknown error')}")
-            logger.info(f"Esperando a que el endpoint esté listo... Estado actual: {status}")
-            time.sleep(30)
+        logger.info("Esperando a que el endpoint esté listo...")
+        waiter = sagemaker.get_waiter('endpoint_in_service')
+        waiter.wait(EndpointName=endpoint_name)
         
+        logger.info(f"¡Endpoint {endpoint_name} creado y listo para usar!")
         return endpoint_name
         
     except Exception as e:
@@ -286,13 +314,23 @@ def test_endpoint(endpoint_name):
         return False
 
 if __name__ == '__main__':
-    try:
-        endpoint_name = create_sagemaker_endpoint()
-        if test_endpoint(endpoint_name):
-            print(f"Endpoint {endpoint_name} configurado y funcionando correctamente")
-        else:
-            print("Error al probar el endpoint")
-            exit(1)
-    except Exception as e:
-        print(f"Error: {str(e)}")
-        exit(1) 
+    parser = argparse.ArgumentParser(description='Configurar endpoint de SageMaker para Llama 2')
+    parser.add_argument('--modelo', choices=['7b', '13b', '70b'], default='13b',
+                      help='Versión del modelo a usar (default: 13b)')
+    parser.add_argument('--force', action='store_true',
+                      help='Forzar recreación del endpoint aunque exista')
+    
+    args = parser.parse_args()
+    
+    # Mostrar información de costos
+    config = MODELO_CONFIG[args.modelo]
+    logger.info(f"\nModelo seleccionado: {config['nombre']}")
+    logger.info(f"Descripción: {config['descripcion']}")
+    logger.info(f"Instancia: {config['instancia']}")
+    
+    if args.modelo == '70b':
+        logger.warning("\n¡ADVERTENCIA! Has seleccionado el modelo de 70B que requiere una instancia más potente y costosa.")
+        logger.warning("Costo aproximado: $2-3 por hora")
+        input("Presiona Enter para continuar o Ctrl+C para cancelar...")
+    
+    create_sagemaker_endpoint(args.modelo, args.force) 
