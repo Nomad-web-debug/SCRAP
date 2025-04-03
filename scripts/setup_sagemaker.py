@@ -188,6 +188,37 @@ def eliminar_endpoint_existente(sagemaker, endpoint_name):
         if e.response['Error']['Code'] != 'ValidationException':
             raise
 
+def cleanup_resources(sagemaker, model_name):
+    """
+    Limpia todos los recursos asociados en caso de error
+    """
+    try:
+        # Eliminar endpoint si existe
+        endpoint_name = f"{model_name}-endpoint"
+        try:
+            sagemaker.delete_endpoint(EndpointName=endpoint_name)
+            logger.info(f"Endpoint {endpoint_name} eliminado")
+        except ClientError:
+            pass
+
+        # Eliminar configuración del endpoint
+        config_name = f"{model_name}-config"
+        try:
+            sagemaker.delete_endpoint_config(EndpointConfigName=config_name)
+            logger.info(f"Configuración {config_name} eliminada")
+        except ClientError:
+            pass
+
+        # Eliminar modelo
+        try:
+            sagemaker.delete_model(ModelName=model_name)
+            logger.info(f"Modelo {model_name} eliminado")
+        except ClientError:
+            pass
+
+    except Exception as e:
+        logger.error(f"Error durante la limpieza: {str(e)}")
+
 def create_sagemaker_endpoint(modelo_elegido='13b', force_recreate=False):
     """
     Crea un endpoint de SageMaker con el modelo Llama 2 especificado
@@ -195,6 +226,9 @@ def create_sagemaker_endpoint(modelo_elegido='13b', force_recreate=False):
         modelo_elegido (str): Versión del modelo ('7b', '13b', '70b')
         force_recreate (bool): Si True, elimina y recrea el endpoint aunque exista
     """
+    sagemaker = None
+    model_name = None
+    
     try:
         # Verificar que el token está configurado
         hf_token = os.environ.get('HUGGINGFACE_HUB_TOKEN')
@@ -236,7 +270,7 @@ def create_sagemaker_endpoint(modelo_elegido='13b', force_recreate=False):
         
         # Crear modelo
         logger.info(f"Creando modelo {model_name}...")
-        image_uri = f"763104351884.dkr.ecr.{region}.amazonaws.com/huggingface-pytorch-inference:2.1.1-transformers4.37.2-gpu-py310-cu121"
+        image_uri = f"763104351884.dkr.ecr.{region}.amazonaws.com/huggingface-pytorch-inference:1.10.2-transformers4.17.0-gpu-py38-cu113"
         
         sagemaker.create_model(
             ModelName=model_name,
@@ -253,7 +287,8 @@ def create_sagemaker_endpoint(modelo_elegido='13b', force_recreate=False):
                     'HF_MODEL_QUANTIZE': 'bit8',
                     'HUGGINGFACE_HUB_TOKEN': hf_token,
                     'SAGEMAKER_MODEL_SERVER_TIMEOUT': '3600',
-                    'SAGEMAKER_MODEL_SERVER_WORKERS': '1'
+                    'SAGEMAKER_MODEL_SERVER_WORKERS': '1',
+                    'TRANSFORMERS_CACHE': '/tmp/transformers_cache'
                 }
             }
         )
@@ -289,6 +324,9 @@ def create_sagemaker_endpoint(modelo_elegido='13b', force_recreate=False):
         
     except Exception as e:
         logger.error(f"Error creando endpoint: {str(e)}")
+        if sagemaker and model_name:
+            logger.info("Limpiando recursos debido al error...")
+            cleanup_resources(sagemaker, model_name)
         raise
 
 def test_endpoint(endpoint_name):
@@ -321,18 +359,19 @@ if __name__ == '__main__':
                       help='Versión del modelo a usar (default: 13b)')
     parser.add_argument('--force', action='store_true',
                       help='Forzar recreación del endpoint aunque exista')
+    parser.add_argument('--cleanup', action='store_true',
+                      help='Eliminar todos los recursos al terminar')
     
     args = parser.parse_args()
     
-    # Mostrar información de costos
-    config = MODELO_CONFIG[args.modelo]
-    logger.info(f"\nModelo seleccionado: {config['nombre']}")
-    logger.info(f"Descripción: {config['descripcion']}")
-    logger.info(f"Instancia: {config['instancia']}")
-    
-    if args.modelo == '70b':
-        logger.warning("\n¡ADVERTENCIA! Has seleccionado el modelo de 70B que requiere una instancia más potente y costosa.")
-        logger.warning("Costo aproximado: $2-3 por hora")
-        input("Presiona Enter para continuar o Ctrl+C para cancelar...")
-    
-    create_sagemaker_endpoint(args.modelo, args.force) 
+    try:
+        endpoint_name = create_sagemaker_endpoint(args.modelo, args.force)
+        if args.cleanup:
+            logger.info("Limpiando recursos...")
+            region = os.environ.get('AWS_REGION', 'us-east-1')
+            session = boto3.Session(region_name=region)
+            sagemaker = session.client('sagemaker')
+            cleanup_resources(sagemaker, MODELO_CONFIG[args.modelo]['nombre'])
+    except Exception as e:
+        logger.error(f"Error: {str(e)}")
+        exit(1) 
