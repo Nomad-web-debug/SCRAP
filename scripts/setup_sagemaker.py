@@ -91,32 +91,45 @@ def attach_required_policies(iam_client, role_name):
             {
                 "Effect": "Allow",
                 "Action": [
-                    "sagemaker:*"
+                    "sagemaker:*",
+                    "ecr:GetAuthorizationToken"
                 ],
                 "Resource": "*"
             },
             {
                 "Effect": "Allow",
                 "Action": [
-                    "ecr:GetAuthorizationToken",
                     "ecr:BatchGetImage",
                     "ecr:GetDownloadUrlForLayer",
-                    "ecr:BatchCheckLayerAvailability",
-                    "ecr:DescribeRepositories",
-                    "ecr:ListImages",
-                    "ecr:DescribeImages"
+                    "ecr:BatchCheckLayerAvailability"
                 ],
-                "Resource": "*"
+                "Resource": [
+                    "arn:aws:ecr:*:976280784186:repository/*",
+                    "arn:aws:ecr:*:763104351884:repository/*"
+                ]
             },
             {
                 "Effect": "Allow",
                 "Action": [
-                    "iam:PassRole"
+                    "iam:PassRole",
+                    "iam:CreateRole",
+                    "iam:DeleteRole"
                 ],
                 "Resource": [
-                    f"arn:aws:iam::*:role/*SageMaker*",
-                    f"arn:aws:iam::*:role/*Sagemaker*",
-                    f"arn:aws:iam::*:role/*sagemaker*"
+                    "arn:aws:iam::*:role/service-role/AmazonSageMaker*",
+                    "arn:aws:iam::*:role/AmazonSageMaker*"
+                ]
+            },
+            {
+                "Effect": "Allow",
+                "Action": [
+                    "s3:GetObject",
+                    "s3:PutObject",
+                    "s3:DeleteObject",
+                    "s3:ListBucket"
+                ],
+                "Resource": [
+                    "arn:aws:s3:::*"
                 ]
             }
         ]
