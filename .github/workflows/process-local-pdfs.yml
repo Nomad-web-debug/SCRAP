@@ -11,10 +11,6 @@ on:
         description: 'Directorio para resultados'
         required: true
         default: 'estructurados_local'
-      sagemaker_endpoint:
-        description: 'Nombre del endpoint de SageMaker con Llama'
-        required: true
-        type: string
 
 # Asegurar permisos necesarios para GitHub Actions
 permissions:
@@ -30,7 +26,6 @@ jobs:
       AWS_REGION: us-east-1
       AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-      SAGEMAKER_ENDPOINT: ${{ inputs.sagemaker_endpoint }}
     
     steps:
     - uses: actions/checkout@v3
@@ -48,14 +43,27 @@ jobs:
         python -m pip install --upgrade pip
         pip install PyMuPDF pandas boto3
 
+    - name: Verificar endpoint activo
+      id: get-endpoint
+      run: |
+        if [ ! -f "endpoint_state.json" ]; then
+          echo "Error: No se encontró un endpoint configurado"
+          echo "Por favor, ejecuta primero el workflow 'Configurar Endpoint SageMaker'"
+          exit 1
+        fi
+        
+        ENDPOINT_NAME=$(python -c "import json; print(json.load(open('endpoint_state.json'))['endpoint_name'])")
+        MODELO=$(python -c "import json; print(json.load(open('endpoint_state.json'))['modelo'])")
+        
+        echo "endpoint_name=$ENDPOINT_NAME" >> $GITHUB_ENV
+        echo "modelo=$MODELO" >> $GITHUB_ENV
+        
+        echo "Usando endpoint: $ENDPOINT_NAME (Modelo: Llama 2 $MODELO)"
+
     - name: Verificar credenciales AWS
       run: |
         if [ -z "$AWS_REGION" ] || [ -z "$AWS_ACCESS_KEY_ID" ] || [ -z "$AWS_SECRET_ACCESS_KEY" ]; then
           echo "Error: Faltan credenciales de AWS"
-          exit 1
-        fi
-        if [ -z "$SAGEMAKER_ENDPOINT" ]; then
-          echo "Error: Endpoint de SageMaker no configurado"
           exit 1
         fi
 
@@ -83,7 +91,16 @@ jobs:
         python scripts/process_with_llama.py \
           --input-dir "${{ github.event.inputs.input_dir }}" \
           --output-dir "${{ github.event.inputs.output_dir }}" \
-          --endpoint "${{ env.SAGEMAKER_ENDPOINT }}"
+          --endpoint "${{ env.endpoint_name }}"
+
+    - name: Mostrar información del procesamiento
+      if: always()
+      run: |
+        echo "Procesamiento completado con:"
+        echo "- Endpoint: ${{ env.endpoint_name }}"
+        echo "- Modelo: Llama 2 ${{ env.modelo }}"
+        echo "- Directorio entrada: ${{ github.event.inputs.input_dir }}"
+        echo "- Directorio salida: ${{ github.event.inputs.output_dir }}"
 
     - name: Generar página de descargas
       if: always()

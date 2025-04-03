@@ -5,6 +5,7 @@ import logging
 import os
 from botocore.exceptions import ClientError
 import argparse
+from datetime import datetime
 
 # Configurar logging
 logging.basicConfig(
@@ -219,6 +220,20 @@ def cleanup_resources(sagemaker, model_name):
     except Exception as e:
         logger.error(f"Error durante la limpieza: {str(e)}")
 
+def save_endpoint_state(endpoint_name: str, modelo: str):
+    """
+    Guarda el estado del endpoint activo
+    """
+    state = {
+        'endpoint_name': endpoint_name,
+        'modelo': modelo,
+        'ultima_actualizacion': datetime.now().isoformat()
+    }
+    
+    with open('endpoint_state.json', 'w', encoding='utf-8') as f:
+        json.dump(state, f, ensure_ascii=False, indent=2)
+    logger.info(f"Estado del endpoint guardado en endpoint_state.json")
+
 def create_sagemaker_endpoint(modelo_elegido='13b', force_recreate=False):
     """
     Crea un endpoint de SageMaker con el modelo Llama 2 especificado
@@ -322,6 +337,10 @@ def create_sagemaker_endpoint(modelo_elegido='13b', force_recreate=False):
         waiter.wait(EndpointName=endpoint_name)
         
         logger.info(f"¡Endpoint {endpoint_name} creado y listo para usar!")
+        
+        # Guardar estado del endpoint
+        save_endpoint_state(endpoint_name, modelo_elegido)
+        
         return endpoint_name
         
     except Exception as e:
