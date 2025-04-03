@@ -197,25 +197,37 @@ def cleanup_resources(sagemaker, model_name):
         # Eliminar endpoint si existe
         endpoint_name = f"{model_name}-endpoint"
         try:
+            logger.info(f"Eliminando endpoint {endpoint_name}...")
             sagemaker.delete_endpoint(EndpointName=endpoint_name)
+            waiter = sagemaker.get_waiter('endpoint_deleted')
+            waiter.wait(EndpointName=endpoint_name)
             logger.info(f"Endpoint {endpoint_name} eliminado")
-        except ClientError:
-            pass
+        except ClientError as e:
+            if e.response['Error']['Code'] != 'ResourceNotFoundException':
+                logger.warning(f"Error eliminando endpoint: {str(e)}")
 
         # Eliminar configuración del endpoint
         config_name = f"{model_name}-config"
         try:
+            logger.info(f"Eliminando configuración {config_name}...")
             sagemaker.delete_endpoint_config(EndpointConfigName=config_name)
             logger.info(f"Configuración {config_name} eliminada")
-        except ClientError:
-            pass
+        except ClientError as e:
+            if e.response['Error']['Code'] != 'ResourceNotFoundException':
+                logger.warning(f"Error eliminando configuración: {str(e)}")
 
         # Eliminar modelo
         try:
+            logger.info(f"Eliminando modelo {model_name}...")
             sagemaker.delete_model(ModelName=model_name)
             logger.info(f"Modelo {model_name} eliminado")
-        except ClientError:
-            pass
+        except ClientError as e:
+            if e.response['Error']['Code'] != 'ResourceNotFoundException':
+                logger.warning(f"Error eliminando modelo: {str(e)}")
+
+        # Esperar un momento para asegurar que AWS ha liberado los recursos
+        logger.info("Esperando a que AWS libere los recursos...")
+        time.sleep(30)
 
     except Exception as e:
         logger.error(f"Error durante la limpieza: {str(e)}")
@@ -276,8 +288,15 @@ def create_sagemaker_endpoint(modelo_elegido='13b', force_recreate=False):
         if active_endpoint:
             logger.info(f"Eliminando endpoint anterior: {active_endpoint} (Modelo: {active_model})")
             cleanup_resources(sagemaker, MODELO_CONFIG[active_model]['nombre'])
-            # Esperar a que se elimine completamente
-            time.sleep(10)  # Dar tiempo para que AWS limpie los recursos
+            
+            # Verificar que el endpoint anterior se haya eliminado completamente
+            try:
+                sagemaker.describe_endpoint(EndpointName=active_endpoint)
+                logger.error("El endpoint anterior aún existe. Esperando más tiempo...")
+                time.sleep(30)  # Esperar más tiempo si aún existe
+            except ClientError as e:
+                if e.response['Error']['Code'] == 'ResourceNotFoundException':
+                    logger.info("Endpoint anterior eliminado correctamente")
 
         # Nombres de recursos
         model_name = config['nombre']
