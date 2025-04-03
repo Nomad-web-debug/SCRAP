@@ -25,7 +25,7 @@ MODELO_CONFIG = {
     '13b': {
         'nombre': 'llama-2-13b',
         'modelo_hf': 'meta-llama/Llama-2-13b-chat-hf',
-        'instancia': 'ml.g5.2xlarge',
+        'instancia': 'ml.g5.xlarge',
         'descripcion': 'Balance entre rendimiento y costo'
     },
     '70b': {
@@ -296,6 +296,44 @@ def list_all_resources(sagemaker):
     
     return resources
 
+def check_service_limits(sagemaker):
+    """
+    Verifica los límites de servicio y endpoints activos
+    """
+    try:
+        # Listar todos los endpoints activos
+        response = sagemaker.list_endpoints()
+        active_endpoints = response['Endpoints']
+        
+        logger.info(f"Endpoints activos encontrados: {len(active_endpoints)}")
+        for endpoint in active_endpoints:
+            logger.info(f"- {endpoint['EndpointName']} (Estado: {endpoint['EndpointStatus']})")
+            
+            # Obtener detalles del endpoint
+            endpoint_details = sagemaker.describe_endpoint(EndpointName=endpoint['EndpointName'])
+            config_name = endpoint_details['EndpointConfigName']
+            
+            # Obtener detalles de la configuración
+            config_details = sagemaker.describe_endpoint_config(EndpointConfigName=config_name)
+            instance_type = config_details['ProductionVariants'][0]['InstanceType']
+            
+            logger.info(f"  Tipo de instancia: {instance_type}")
+            logger.info(f"  Configuración: {config_name}")
+        
+        # Listar todos los modelos
+        response = sagemaker.list_models()
+        active_models = response['Models']
+        
+        logger.info(f"\nModelos activos encontrados: {len(active_models)}")
+        for model in active_models:
+            logger.info(f"- {model['ModelName']}")
+        
+        return active_endpoints, active_models
+        
+    except Exception as e:
+        logger.error(f"Error verificando límites de servicio: {str(e)}")
+        return [], []
+
 def create_sagemaker_endpoint(modelo_elegido='13b', force_recreate=False):
     """
     Crea un endpoint de SageMaker con el modelo Llama 2 especificado
@@ -318,6 +356,15 @@ def create_sagemaker_endpoint(modelo_elegido='13b', force_recreate=False):
         session = boto3.Session(region_name=region)
         sagemaker = session.client('sagemaker')
         iam = session.client('iam')
+        
+        # Verificar estado actual de los recursos
+        logger.info("Verificando estado actual de los recursos...")
+        active_endpoints, active_models = check_service_limits(sagemaker)
+        
+        if active_endpoints:
+            logger.info("\nSe encontraron endpoints activos. Procediendo a eliminarlos...")
+        else:
+            logger.info("\nNo se encontraron endpoints activos.")
         
         # Obtener o crear rol
         role_arn = get_or_create_role(iam)
