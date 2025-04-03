@@ -98,33 +98,32 @@ def attach_required_policies(iam_client, role_name):
             {
                 "Effect": "Allow",
                 "Action": [
-                    "ecr:GetAuthorizationToken"
-                ],
-                "Resource": "*"
-            },
-            {
-                "Effect": "Allow",
-                "Action": [
-                    "ecr:BatchGetImage",
-                    "ecr:GetDownloadUrlForLayer",
-                    "ecr:BatchCheckLayerAvailability",
-                    "ecr:DescribeImages"
+                    "sagemaker:CreateModel",
+                    "sagemaker:CreateEndpointConfig",
+                    "sagemaker:CreateEndpoint"
                 ],
                 "Resource": [
-                    "arn:aws:ecr:us-east-1:976280784186:repository/jumpstart-dft-meta-textgeneration-llama-2-13b"
+                    f"arn:aws:sagemaker:*:*:model/*",
+                    f"arn:aws:sagemaker:*:*:endpoint/*",
+                    f"arn:aws:sagemaker:*:*:endpoint-config/*"
                 ]
             },
             {
                 "Effect": "Allow",
                 "Action": [
-                    "s3:GetObject",
-                    "s3:PutObject",
-                    "s3:DeleteObject",
-                    "s3:ListBucket"
+                    "sagemaker:CreateModel"
                 ],
                 "Resource": [
-                    "arn:aws:s3:::sagemaker-*",
-                    "arn:aws:s3:::jumpstart-cache-prod-*"
+                    "arn:aws:sagemaker:*:865070037744:model-package/llama-2-13b*"
+                ]
+            },
+            {
+                "Effect": "Allow",
+                "Action": [
+                    "iam:PassRole"
+                ],
+                "Resource": [
+                    "arn:aws:iam::*:role/AmazonSageMaker*"
                 ]
             }
         ]
@@ -201,21 +200,15 @@ def create_sagemaker_endpoint():
         except ClientError:
             logger.info(f"Creando modelo {model_name}...")
             
-            # Usar la imagen de SageMaker para Llama 2 13B
-            image_uri = f"976280784186.dkr.ecr.{region}.amazonaws.com/jumpstart-dft-meta-textgeneration-llama-2-13b:1.0.0"
+            # Usar el modelo preempaquetado de JumpStart
+            model_package_arn = f"arn:aws:sagemaker:{region}:865070037744:model-package/llama-2-13b-v1"
             
             # Crear el modelo en tu cuenta
             sagemaker.create_model(
                 ModelName=model_name,
                 ExecutionRoleArn=role_arn,
                 PrimaryContainer={
-                    'Image': image_uri,
-                    'Environment': {
-                        'SAGEMAKER_CONTAINER_LOG_LEVEL': '20',
-                        'SAGEMAKER_REGION': region,
-                        'MAX_INPUT_LENGTH': '2048',
-                        'MAX_TOTAL_TOKENS': '4096'
-                    }
+                    'ModelPackageName': model_package_arn
                 }
             )
         
