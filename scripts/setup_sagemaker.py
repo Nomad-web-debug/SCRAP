@@ -236,7 +236,7 @@ def create_sagemaker_endpoint(modelo_elegido='13b', force_recreate=False):
         
         # Crear modelo
         logger.info(f"Creando modelo {model_name}...")
-        image_uri = f"763104351884.dkr.ecr.{region}.amazonaws.com/huggingface-pytorch-inference:1.13.1-transformers4.26.0-gpu-py39-cu117"
+        image_uri = f"763104351884.dkr.ecr.{region}.amazonaws.com/huggingface-pytorch-inference:2.1.1-transformers4.37.2-gpu-py310-cu121"
         
         sagemaker.create_model(
             ModelName=model_name,
@@ -251,7 +251,9 @@ def create_sagemaker_endpoint(modelo_elegido='13b', force_recreate=False):
                     'MAX_INPUT_LENGTH': '2048',
                     'MAX_TOTAL_TOKENS': '4096',
                     'HF_MODEL_QUANTIZE': 'bit8',
-                    'HUGGINGFACE_HUB_TOKEN': hf_token
+                    'HUGGINGFACE_HUB_TOKEN': hf_token,
+                    'SAGEMAKER_MODEL_SERVER_TIMEOUT': '3600',
+                    'SAGEMAKER_MODEL_SERVER_WORKERS': '1'
                 }
             }
         )
