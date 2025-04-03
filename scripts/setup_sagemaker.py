@@ -91,7 +91,13 @@ def attach_required_policies(iam_client, role_name):
             {
                 "Effect": "Allow",
                 "Action": [
-                    "sagemaker:*",
+                    "sagemaker:*"
+                ],
+                "Resource": "*"
+            },
+            {
+                "Effect": "Allow",
+                "Action": [
                     "ecr:GetAuthorizationToken"
                 ],
                 "Resource": "*"
@@ -101,23 +107,11 @@ def attach_required_policies(iam_client, role_name):
                 "Action": [
                     "ecr:BatchGetImage",
                     "ecr:GetDownloadUrlForLayer",
-                    "ecr:BatchCheckLayerAvailability"
+                    "ecr:BatchCheckLayerAvailability",
+                    "ecr:DescribeImages"
                 ],
                 "Resource": [
-                    "arn:aws:ecr:*:976280784186:repository/*",
-                    "arn:aws:ecr:*:763104351884:repository/*"
-                ]
-            },
-            {
-                "Effect": "Allow",
-                "Action": [
-                    "iam:PassRole",
-                    "iam:CreateRole",
-                    "iam:DeleteRole"
-                ],
-                "Resource": [
-                    "arn:aws:iam::*:role/service-role/AmazonSageMaker*",
-                    "arn:aws:iam::*:role/AmazonSageMaker*"
+                    "arn:aws:ecr:us-east-1:976280784186:repository/jumpstart-dft-meta-textgeneration-llama-2-13b"
                 ]
             },
             {
@@ -129,7 +123,8 @@ def attach_required_policies(iam_client, role_name):
                     "s3:ListBucket"
                 ],
                 "Resource": [
-                    "arn:aws:s3:::*"
+                    "arn:aws:s3:::sagemaker-*",
+                    "arn:aws:s3:::jumpstart-cache-prod-*"
                 ]
             }
         ]
