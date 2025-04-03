@@ -81,8 +81,7 @@ def attach_required_policies(iam_client, role_name):
     """
     required_policies = [
         'arn:aws:iam::aws:policy/AmazonSageMakerFullAccess',
-        'arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly',
-        'arn:aws:iam::aws:policy/service-role/AmazonSageMakerServiceCatalogProductsUseRole'
+        'arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly'
     ]
     
     # Política inline para acceder a JumpStart y ECR
@@ -92,7 +91,13 @@ def attach_required_policies(iam_client, role_name):
             {
                 "Effect": "Allow",
                 "Action": [
-                    "sagemaker:*",
+                    "sagemaker:*"
+                ],
+                "Resource": "*"
+            },
+            {
+                "Effect": "Allow",
+                "Action": [
                     "ecr:GetAuthorizationToken",
                     "ecr:BatchGetImage",
                     "ecr:GetDownloadUrlForLayer",
@@ -106,27 +111,12 @@ def attach_required_policies(iam_client, role_name):
             {
                 "Effect": "Allow",
                 "Action": [
-                    "iam:GetRole",
-                    "iam:CreateRole",
-                    "iam:AttachRolePolicy"
-                ],
-                "Resource": "*"
-            },
-            {
-                "Effect": "Allow",
-                "Action": [
-                    "ecr:BatchGetImage",
-                    "ecr:GetDownloadUrlForLayer",
-                    "ecr:BatchCheckLayerAvailability"
+                    "iam:PassRole"
                 ],
                 "Resource": [
-                    "arn:aws:ecr:*:976280784186:repository/*",
-                    "arn:aws:ecr:*:081325390199:repository/*",
-                    "arn:aws:ecr:*:763104351884:repository/*",
-                    "arn:aws:ecr:*:217643126080:repository/*",
-                    "arn:aws:ecr:*:626614931356:repository/*",
-                    "arn:aws:ecr:*:683313688378:repository/*",
-                    "arn:aws:ecr:*:865070037744:repository/*"
+                    f"arn:aws:iam::*:role/*SageMaker*",
+                    f"arn:aws:iam::*:role/*Sagemaker*",
+                    f"arn:aws:iam::*:role/*sagemaker*"
                 ]
             }
         ]
