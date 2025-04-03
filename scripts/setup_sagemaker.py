@@ -268,6 +268,34 @@ def list_active_endpoints(sagemaker):
         logger.error(f"Error listando endpoints: {str(e)}")
         return []
 
+def list_all_resources(sagemaker):
+    """
+    Lista todos los recursos de SageMaker
+    """
+    resources = {
+        'endpoints': [],
+        'endpoint_configs': [],
+        'models': []
+    }
+    
+    try:
+        # Listar endpoints
+        response = sagemaker.list_endpoints()
+        resources['endpoints'] = [endpoint['EndpointName'] for endpoint in response['Endpoints']]
+        
+        # Listar configuraciones
+        response = sagemaker.list_endpoint_configs()
+        resources['endpoint_configs'] = [config['EndpointConfigName'] for config in response['EndpointConfigs']]
+        
+        # Listar modelos
+        response = sagemaker.list_models()
+        resources['models'] = [model['ModelName'] for model in response['Models']]
+        
+    except Exception as e:
+        logger.error(f"Error listando recursos: {str(e)}")
+    
+    return resources
+
 def create_sagemaker_endpoint(modelo_elegido='13b', force_recreate=False):
     """
     Crea un endpoint de SageMaker con el modelo Llama 2 especificado
@@ -294,23 +322,42 @@ def create_sagemaker_endpoint(modelo_elegido='13b', force_recreate=False):
         # Obtener o crear rol
         role_arn = get_or_create_role(iam)
         
-        # Listar y eliminar todos los endpoints activos
-        active_endpoints = list_active_endpoints(sagemaker)
-        if active_endpoints:
-            logger.info(f"Encontrados {len(active_endpoints)} endpoints activos")
-            for endpoint in active_endpoints:
-                logger.info(f"Eliminando endpoint: {endpoint}")
-                try:
-                    sagemaker.delete_endpoint(EndpointName=endpoint)
-                    waiter = sagemaker.get_waiter('endpoint_deleted')
-                    waiter.wait(EndpointName=endpoint)
-                    logger.info(f"Endpoint {endpoint} eliminado correctamente")
-                except Exception as e:
-                    logger.error(f"Error eliminando endpoint {endpoint}: {str(e)}")
-            
-            # Esperar a que todos los recursos se liberen
-            logger.info("Esperando a que AWS libere los recursos...")
-            time.sleep(60)  # Esperar 1 minuto para asegurar que los recursos se liberen
+        # Listar y eliminar todos los recursos existentes
+        logger.info("Verificando recursos existentes...")
+        resources = list_all_resources(sagemaker)
+        
+        # Eliminar todos los endpoints
+        for endpoint in resources['endpoints']:
+            logger.info(f"Eliminando endpoint: {endpoint}")
+            try:
+                sagemaker.delete_endpoint(EndpointName=endpoint)
+                waiter = sagemaker.get_waiter('endpoint_deleted')
+                waiter.wait(EndpointName=endpoint)
+                logger.info(f"Endpoint {endpoint} eliminado correctamente")
+            except Exception as e:
+                logger.error(f"Error eliminando endpoint {endpoint}: {str(e)}")
+        
+        # Eliminar todas las configuraciones
+        for config_name in resources['endpoint_configs']:
+            logger.info(f"Eliminando configuración: {config_name}")
+            try:
+                sagemaker.delete_endpoint_config(EndpointConfigName=config_name)
+                logger.info(f"Configuración {config_name} eliminada correctamente")
+            except Exception as e:
+                logger.error(f"Error eliminando configuración {config_name}: {str(e)}")
+        
+        # Eliminar todos los modelos
+        for model_name in resources['models']:
+            logger.info(f"Eliminando modelo: {model_name}")
+            try:
+                sagemaker.delete_model(ModelName=model_name)
+                logger.info(f"Modelo {model_name} eliminado correctamente")
+            except Exception as e:
+                logger.error(f"Error eliminando modelo {model_name}: {str(e)}")
+        
+        # Esperar a que todos los recursos se liberen
+        logger.info("Esperando a que AWS libere los recursos...")
+        time.sleep(60)  # Esperar 1 minuto para asegurar que los recursos se liberen
 
         # Nombres de recursos
         model_name = config['nombre']
