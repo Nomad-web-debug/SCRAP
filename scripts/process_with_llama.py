@@ -196,6 +196,13 @@ def invoke_llama(text: str, filename: str, endpoint_name: str) -> Dict:
         
         # Crear cliente de SageMaker con la región específica
         runtime = boto3.client('sagemaker-runtime', region_name=region)
+        sagemaker = boto3.client('sagemaker', region_name=region)
+        
+        # Obtener información del endpoint para determinar el modelo
+        endpoint_info = sagemaker.describe_endpoint(EndpointName=endpoint_name)
+        config_name = endpoint_info['EndpointConfigName']
+        config_info = sagemaker.describe_endpoint_config(EndpointConfigName=config_name)
+        model_name = config_info['ProductionVariants'][0]['ModelName']
         
         # Generar prompt
         prompt = generate_prompt(text, filename)
@@ -207,7 +214,8 @@ def invoke_llama(text: str, filename: str, endpoint_name: str) -> Dict:
             "temperature": 0.1,
             "top_p": 0.9,
             "frequency_penalty": 0.3,
-            "presence_penalty": 0.3
+            "presence_penalty": 0.3,
+            "model_name": model_name
         }
         
         # Invocar endpoint
