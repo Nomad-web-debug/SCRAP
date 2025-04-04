@@ -13,6 +13,10 @@ on:
           - 'Llama 2 70B - Máxima potencia (ml.g5.12xlarge)'
         default: 'Llama 2 13B - Balance rendimiento/costo (ml.g4dn.xlarge)'
 
+permissions:
+  contents: write
+  id-token: write
+
 jobs:
   setup-endpoint:
     runs-on: ubuntu-latest
@@ -64,4 +68,4 @@ jobs:
         git config --global user.name "GitHub Actions"
         git add data/endpoint_state.json
         git commit -m "Actualizar estado del endpoint SageMaker"
-        git push 
+        git push "https://${{ github.actor }}:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" 
