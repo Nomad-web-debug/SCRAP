@@ -209,13 +209,15 @@ def invoke_llama(text: str, filename: str, endpoint_name: str) -> Dict:
         
         # Preparar payload
         payload = {
-            "prompt": prompt,
-            "max_tokens": 4000,
-            "temperature": 0.1,
-            "top_p": 0.9,
-            "frequency_penalty": 0.3,
-            "presence_penalty": 0.3,
-            "model_name": model_name
+            "inputs": {
+                "prompt": prompt,
+                "max_tokens": 4000,
+                "temperature": 0.1,
+                "top_p": 0.9,
+                "frequency_penalty": 0.3,
+                "presence_penalty": 0.3,
+                "model_name": model_name
+            }
         }
         
         # Invocar endpoint
