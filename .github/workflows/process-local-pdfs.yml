@@ -46,14 +46,23 @@ jobs:
     - name: Verificar endpoint activo
       id: get-endpoint
       run: |
+        # Verificar si existe el archivo de estado
         if [ ! -f "endpoint_state.json" ]; then
           echo "Error: No se encontró un endpoint configurado"
           echo "Por favor, ejecuta primero el workflow 'Configurar Endpoint SageMaker'"
           exit 1
         fi
         
+        # Obtener información del endpoint
         ENDPOINT_NAME=$(python -c "import json; print(json.load(open('endpoint_state.json'))['endpoint_name'])")
         MODELO=$(python -c "import json; print(json.load(open('endpoint_state.json'))['modelo'])")
+        
+        # Verificar que el endpoint existe en SageMaker
+        aws sagemaker describe-endpoint --endpoint-name "$ENDPOINT_NAME" || {
+          echo "Error: El endpoint $ENDPOINT_NAME no existe en SageMaker"
+          echo "Por favor, ejecuta primero el workflow 'Configurar Endpoint SageMaker'"
+          exit 1
+        }
         
         echo "endpoint_name=$ENDPOINT_NAME" >> $GITHUB_ENV
         echo "modelo=$MODELO" >> $GITHUB_ENV
