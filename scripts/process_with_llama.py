@@ -191,8 +191,11 @@ def invoke_llama(text: str, filename: str, endpoint_name: str) -> Dict:
     Invoca el endpoint de SageMaker con Llama para procesar el texto
     """
     try:
-        # Crear cliente de SageMaker
-        runtime = boto3.client('sagemaker-runtime')
+        # Obtener región de AWS
+        region = os.environ.get('AWS_REGION', 'us-east-1')
+        
+        # Crear cliente de SageMaker con la región específica
+        runtime = boto3.client('sagemaker-runtime', region_name=region)
         
         # Generar prompt
         prompt = generate_prompt(text, filename)
