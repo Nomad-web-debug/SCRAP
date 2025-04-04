@@ -57,3 +57,11 @@ jobs:
         
     - name: Configurar Endpoint SageMaker
       run: python scripts/setup_sagemaker.py --modelo ${{ env.MODELO_VERSION }} 
+      
+    - name: Subir archivo de estado
+      run: |
+        git config --global user.email "github-actions@github.com"
+        git config --global user.name "GitHub Actions"
+        git add data/endpoint_state.json
+        git commit -m "Actualizar estado del endpoint SageMaker"
+        git push 

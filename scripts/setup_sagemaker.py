@@ -242,9 +242,18 @@ def save_endpoint_state(endpoint_name: str, modelo: str):
         'ultima_actualizacion': datetime.now().isoformat()
     }
     
-    with open('endpoint_state.json', 'w', encoding='utf-8') as f:
+    # Asegurar que el directorio existe
+    os.makedirs('data', exist_ok=True)
+    
+    # Guardar en el directorio data
+    file_path = os.path.join('data', 'endpoint_state.json')
+    with open(file_path, 'w', encoding='utf-8') as f:
         json.dump(state, f, ensure_ascii=False, indent=2)
-    logger.info(f"Estado del endpoint guardado en endpoint_state.json")
+    logger.info(f"Estado del endpoint guardado en {file_path}")
+    
+    # Asegurar que el archivo se suba al repositorio
+    if os.environ.get('GITHUB_ACTIONS') == 'true':
+        print(f"::set-output name=endpoint_state_file::{file_path}")
 
 def get_active_endpoint():
     """
