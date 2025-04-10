@@ -7,6 +7,7 @@ from typing import Dict, List, Optional
 import boto3
 import fitz  # PyMuPDF
 import pandas as pd
+import glob
 
 # Configurar logging
 logging.basicConfig(
@@ -186,7 +187,7 @@ def generate_prompt(text: str, filename: str) -> str:
     Genera una respuesta JSON válida que siga exactamente el formato especificado.
     </response>"""
 
-def invoke_llama(text, filename):
+def invoke_llama(text, filename, endpoint_name):
     """Invoca el modelo Llama en SageMaker"""
     try:
         # Obtener región de AWS
@@ -196,11 +197,11 @@ def invoke_llama(text, filename):
         
         # Crear cliente de SageMaker
         runtime = boto3.client('sagemaker-runtime', region_name=region)
+        sagemaker = boto3.client('sagemaker', region_name=region)
         
-        # Obtener nombre del endpoint desde variable de entorno
-        endpoint_name = os.getenv('SAGEMAKER_ENDPOINT_NAME')
-        if not endpoint_name:
-            raise ValueError("SAGEMAKER_ENDPOINT_NAME no está configurado en las variables de entorno")
+        # Obtener información del endpoint para determinar el modelo
+        endpoint_info = sagemaker.describe_endpoint(EndpointName=endpoint_name)
+        model_name = endpoint_info['ProductionVariants'][0]['ModelName']
         
         # Generar prompt
         prompt = generate_prompt(text, filename)
@@ -213,7 +214,8 @@ def invoke_llama(text, filename):
                 "temperature": 0.1,
                 "top_p": 0.9,
                 "frequency_penalty": 0.3,
-                "presence_penalty": 0.3
+                "presence_penalty": 0.3,
+                "model_name": model_name
             }
         }
         
@@ -418,55 +420,62 @@ def create_index_html(output_dir: str, csv_file: str, json_files: List[str]):
         logger.error(f"Error creando archivo HTML: {str(e)}")
 
 def main():
-    parser = argparse.ArgumentParser(description='Procesa PDFs con Llama en SageMaker')
-    parser.add_argument('--input-dir', required=True, help='Directorio con PDFs')
-    parser.add_argument('--output-dir', required=True, help='Directorio para resultados')
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--input-dir', required=True, help='Directorio con PDFs a procesar')
+    parser.add_argument('--output-dir', required=True, help='Directorio para guardar resultados')
     parser.add_argument('--endpoint', required=True, help='Nombre del endpoint de SageMaker')
-    
     args = parser.parse_args()
     
     # Crear directorio de salida si no existe
     os.makedirs(args.output_dir, exist_ok=True)
     
-    # Lista para almacenar todos los resultados
-    all_results = []
+    # Lista de resultados para el CSV
+    results = []
     
-    # Procesar cada PDF en el directorio
-    for filename in os.listdir(args.input_dir):
-        if filename.endswith('.pdf'):
-            logger.info(f"Procesando {filename}...")
+    # Procesar cada PDF
+    for pdf_file in glob.glob(os.path.join(args.input_dir, '*.pdf')):
+        filename = os.path.basename(pdf_file)
+        logging.info(f'Procesando {filename}...')
+        
+        try:
+            # Extraer texto del PDF
+            text = extract_text_from_pdf(pdf_file)
             
-            try:
-                # Extraer texto del PDF
-                pdf_path = os.path.join(args.input_dir, filename)
-                text = extract_text_from_pdf(pdf_path)
+            # Limpiar texto
+            text = clean_text(text)
+            
+            # Invocar modelo
+            result = invoke_llama(text, filename, args.endpoint)
+            
+            # Validar estructura
+            if not validate_structure(result):
+                logging.error(f'Estructura inválida en respuesta para {filename}')
+                continue
                 
-                if text:
-                    # Limpiar texto
-                    text = clean_text(text)
-                    
-                    # Procesar con Llama en SageMaker
-                    result = invoke_llama(text, filename)
-                    
-                    # Validar estructura
-                    if validate_structure(result):
-                        # Añadir a resultados
-                        all_results.append(result)
-                        logger.info(f"Documento {filename} procesado exitosamente")
-                    else:
-                        logger.error(f"Estructura inválida para {filename}")
-                else:
-                    logger.error(f"No se pudo extraer texto de {filename}")
-                    
-            except Exception as e:
-                logger.error(f"Error procesando {filename}: {str(e)}")
+            # Guardar JSON individual
+            output_json = os.path.join(args.output_dir, f'{os.path.splitext(filename)[0]}.json')
+            with open(output_json, 'w', encoding='utf-8') as f:
+                json.dump(result, f, ensure_ascii=False, indent=2)
+            
+            # Agregar a resultados para CSV
+            results.append({
+                'archivo': filename,
+                'titulo': result['titulo'],
+                'fecha': result['fecha'],
+                'resumen': result['resumen']
+            })
+            
+        except Exception as e:
+            logging.error(f'Error procesando {filename}: {str(e)}')
+            continue
     
-    # Guardar todos los resultados
-    if all_results:
-        save_results(all_results, args.output_dir)
-        logger.info(f"Procesamiento completado. {len(all_results)} documentos procesados")
+    # Guardar CSV con todos los resultados
+    if results:
+        df = pd.DataFrame(results)
+        csv_path = os.path.join(args.output_dir, 'resultados.csv')
+        df.to_csv(csv_path, index=False, encoding='utf-8')
     else:
-        logger.warning("No se procesó ningún documento correctamente")
+        logging.warning('No se procesó ningún documento correctamente')
 
 if __name__ == '__main__':
     main() 
