@@ -220,15 +220,15 @@ def invoke_llama(text, filename, endpoint_name):
         
         # Preparar payload
         payload = {
-            "inputs": {
-                "prompt": prompt,
+            "inputs": prompt,
+            "parameters": {
                 "max_tokens": 4000,
                 "temperature": 0.1,
                 "top_p": 0.9,
                 "frequency_penalty": 0.3,
-                "presence_penalty": 0.3,
-                "model_name": model_name
-            }
+                "presence_penalty": 0.3
+            },
+            "model_name": model_name
         }
         
         logger.info(f"Enviando payload al endpoint {endpoint_name}")
