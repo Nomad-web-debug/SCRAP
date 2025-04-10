@@ -196,14 +196,11 @@ def invoke_llama(text, filename):
         
         # Crear cliente de SageMaker
         runtime = boto3.client('sagemaker-runtime', region_name=region)
-        sagemaker = boto3.client('sagemaker', region_name=region)
         
-        # Obtener nombre del endpoint
-        endpoint_name = os.getenv('SAGEMAKER_ENDPOINT_NAME', 'llama-2-7b-chat-hf')
-        
-        # Obtener el nombre del modelo del endpoint
-        endpoint_config = sagemaker.describe_endpoint_config(EndpointConfigName=endpoint_name)
-        model_name = endpoint_config['ProductionVariants'][0]['ModelName']
+        # Obtener nombre del endpoint desde variable de entorno
+        endpoint_name = os.getenv('SAGEMAKER_ENDPOINT_NAME')
+        if not endpoint_name:
+            raise ValueError("SAGEMAKER_ENDPOINT_NAME no está configurado en las variables de entorno")
         
         # Generar prompt
         prompt = generate_prompt(text, filename)
@@ -217,8 +214,7 @@ def invoke_llama(text, filename):
                 "top_p": 0.9,
                 "frequency_penalty": 0.3,
                 "presence_penalty": 0.3
-            },
-            "model_name": model_name
+            }
         }
         
         # Invocar endpoint
