@@ -199,9 +199,21 @@ def invoke_llama(text, filename, endpoint_name):
         runtime = boto3.client('sagemaker-runtime', region_name=region)
         sagemaker = boto3.client('sagemaker', region_name=region)
         
-        # Obtener información del endpoint para determinar el modelo
-        endpoint_info = sagemaker.describe_endpoint(EndpointName=endpoint_name)
-        model_name = endpoint_info['ProductionVariants'][0]['ModelName']
+        # Obtener información del endpoint
+        try:
+            endpoint_info = sagemaker.describe_endpoint(EndpointName=endpoint_name)
+            logger.info(f"Información del endpoint: {json.dumps(endpoint_info, indent=2)}")
+            
+            # Obtener el nombre del modelo de manera más robusta
+            if 'ProductionVariants' in endpoint_info:
+                model_name = endpoint_info['ProductionVariants'][0].get('ModelName', 'llama-2-70b-chat')
+            else:
+                model_name = 'llama-2-70b-chat'
+                logger.warning(f"No se encontró ProductionVariants en la respuesta, usando modelo por defecto: {model_name}")
+        except Exception as e:
+            logger.error(f"Error al obtener información del endpoint: {str(e)}")
+            model_name = 'llama-2-70b-chat'
+            logger.warning(f"Usando modelo por defecto: {model_name}")
         
         # Generar prompt
         prompt = generate_prompt(text, filename)
@@ -219,6 +231,8 @@ def invoke_llama(text, filename, endpoint_name):
             }
         }
         
+        logger.info(f"Enviando payload al endpoint {endpoint_name}")
+        
         # Invocar endpoint
         response = runtime.invoke_endpoint(
             EndpointName=endpoint_name,
@@ -231,7 +245,7 @@ def invoke_llama(text, filename, endpoint_name):
         return response_body
         
     except Exception as e:
-        logging.error(f"Error al invocar el modelo Llama: {str(e)}")
+        logger.error(f"Error al invocar el modelo Llama: {str(e)}")
         raise
 
 def validate_structure(data: Dict) -> bool:
