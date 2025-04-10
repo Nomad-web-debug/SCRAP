@@ -215,9 +215,9 @@ def invoke_llama(text: str, filename: str, endpoint_name: str) -> Dict:
                 "temperature": 0.1,
                 "top_p": 0.9,
                 "frequency_penalty": 0.3,
-                "presence_penalty": 0.3,
-                "model_name": model_name
-            }
+                "presence_penalty": 0.3
+            },
+            "model_name": model_name
         }
         
         # Invocar endpoint
