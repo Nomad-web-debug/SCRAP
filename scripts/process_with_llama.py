@@ -186,23 +186,24 @@ def generate_prompt(text: str, filename: str) -> str:
     Genera una respuesta JSON válida que siga exactamente el formato especificado.
     </response>"""
 
-def invoke_llama(text: str, filename: str, endpoint_name: str) -> Dict:
-    """
-    Invoca el endpoint de SageMaker con Llama para procesar el texto
-    """
+def invoke_llama(text, filename):
+    """Invoca el modelo Llama en SageMaker"""
     try:
         # Obtener región de AWS
-        region = os.environ.get('AWS_REGION', 'us-east-1')
+        region = boto3.Session().region_name
+        if not region:
+            region = 'us-east-1'
         
-        # Crear cliente de SageMaker con la región específica
+        # Crear cliente de SageMaker
         runtime = boto3.client('sagemaker-runtime', region_name=region)
         sagemaker = boto3.client('sagemaker', region_name=region)
         
-        # Obtener información del endpoint para determinar el modelo
-        endpoint_info = sagemaker.describe_endpoint(EndpointName=endpoint_name)
-        config_name = endpoint_info['EndpointConfigName']
-        config_info = sagemaker.describe_endpoint_config(EndpointConfigName=config_name)
-        model_name = config_info['ProductionVariants'][0]['ModelName']
+        # Obtener nombre del endpoint
+        endpoint_name = os.getenv('SAGEMAKER_ENDPOINT_NAME', 'llama-2-7b-chat-hf')
+        
+        # Obtener el nombre del modelo del endpoint
+        endpoint_config = sagemaker.describe_endpoint_config(EndpointConfigName=endpoint_name)
+        model_name = endpoint_config['ProductionVariants'][0]['ModelName']
         
         # Generar prompt
         prompt = generate_prompt(text, filename)
@@ -229,10 +230,10 @@ def invoke_llama(text: str, filename: str, endpoint_name: str) -> Dict:
         
         # Procesar respuesta
         response_body = json.loads(response['Body'].read().decode())
-        return json.loads(response_body['generated_text'])
+        return response_body
         
     except Exception as e:
-        logger.error(f"Error invocando Llama en SageMaker: {str(e)}")
+        logging.error(f"Error al invocar el modelo Llama: {str(e)}")
         raise
 
 def validate_structure(data: Dict) -> bool:
@@ -449,7 +450,7 @@ def main():
                     text = clean_text(text)
                     
                     # Procesar con Llama en SageMaker
-                    result = invoke_llama(text, filename, args.endpoint)
+                    result = invoke_llama(text, filename)
                     
                     # Validar estructura
                     if validate_structure(result):
