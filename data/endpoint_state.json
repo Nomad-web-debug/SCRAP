@@ -1,5 +1,5 @@
 {
-  "endpoint_name": "llama-2-7b-endpoint",
-  "modelo": "7b",
-  "ultima_actualizacion": "2025-04-11T02:05:28.376902"
+  "endpoint_name": "llama-2-13b-endpoint",
+  "modelo": "13b",
+  "ultima_actualizacion": "2025-04-11T02:13:34.055312"
 }
