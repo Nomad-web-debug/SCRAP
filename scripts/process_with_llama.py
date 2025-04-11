@@ -200,41 +200,31 @@ def invoke_llama_model(text: str, endpoint_name: str, model_name: str) -> Option
         
         # Preparar el payload con el modelo y el texto
         payload = {
-            "model_name": model_name,
             "inputs": text,
             "parameters": {
                 "max_new_tokens": 2048,
-                "temperature": 0.1,
-                "top_p": 0.1,
-                "do_sample": False
+                "temperature": 0.7,
+                "top_p": 0.9,
+                "model_name": model_name
             }
         }
         
-        # Convertir el payload a JSON
-        payload_json = json.dumps(payload)
-        
-        # Invocar el endpoint con el modelo especificado
+        # Invocar el endpoint con los atributos personalizados
         response = sagemaker_runtime.invoke_endpoint(
             EndpointName=endpoint_name,
             ContentType='application/json',
-            Body=payload_json,
+            Body=json.dumps(payload),
             CustomAttributes=json.dumps({
-                "model_name": model_name,
-                "parameters": {
-                    "max_new_tokens": 2048,
-                    "temperature": 0.1,
-                    "top_p": 0.1,
-                    "do_sample": False
-                }
+                "model_name": model_name
             })
         )
         
-        # Decodificar la respuesta
-        response_body = response['Body'].read().decode('utf-8')
-        return response_body
+        # Procesar la respuesta
+        result = json.loads(response['Body'].read().decode())
+        return result.get('generated_text', '')
         
     except Exception as e:
-        logger.error(f"Error invocando el modelo Llama 2: {str(e)}")
+        logger.error(f"Error invocando el modelo Llama: {str(e)}")
         return None
 
 def validate_structure(data: Dict) -> bool:
