@@ -199,50 +199,44 @@ def invoke_llama(text, filename, endpoint_name):
         runtime = boto3.client('sagemaker-runtime', region_name=region)
         sagemaker = boto3.client('sagemaker', region_name=region)
         
-        # Obtener información del endpoint
+        # Verificar que el endpoint existe y obtener información
         try:
             endpoint_info = sagemaker.describe_endpoint(EndpointName=endpoint_name)
-            logger.info(f"Información del endpoint: {json.dumps(endpoint_info, indent=2)}")
+            if endpoint_info['EndpointStatus'] != 'InService':
+                raise Exception(f"El endpoint {endpoint_name} no está en servicio")
             
-            # Obtener el nombre del modelo de manera más robusta
-            if 'ProductionVariants' in endpoint_info:
-                model_name = endpoint_info['ProductionVariants'][0].get('ModelName', 'llama-2-70b-chat')
-            else:
-                model_name = 'llama-2-70b-chat'
-                logger.warning(f"No se encontró ProductionVariants en la respuesta, usando modelo por defecto: {model_name}")
+            # Obtener el nombre del modelo de la configuración del endpoint
+            model_name = endpoint_info['ProductionVariants'][0].get('ModelName', 'llama-2-13b-chat')
+            logger.info(f"Usando modelo: {model_name}")
+            
         except Exception as e:
-            logger.error(f"Error al obtener información del endpoint: {str(e)}")
-            model_name = 'llama-2-70b-chat'
-            logger.warning(f"Usando modelo por defecto: {model_name}")
+            raise Exception(f"Error verificando el endpoint {endpoint_name}: {str(e)}")
         
-        # Generar prompt
+        # Generar el prompt
         prompt = generate_prompt(text, filename)
         
-        # Preparar payload
+        # Preparar el payload con el formato correcto
         payload = {
             "inputs": prompt,
             "parameters": {
-                "max_tokens": 4000,
+                "max_new_tokens": 2048,
                 "temperature": 0.1,
                 "top_p": 0.9,
-                "frequency_penalty": 0.3,
-                "presence_penalty": 0.3
+                "do_sample": True
             },
             "model_name": model_name
         }
         
-        logger.info(f"Enviando payload al endpoint {endpoint_name}")
-        
-        # Invocar endpoint
+        # Invocar el endpoint
         response = runtime.invoke_endpoint(
             EndpointName=endpoint_name,
             ContentType='application/json',
             Body=json.dumps(payload)
         )
         
-        # Procesar respuesta
-        response_body = json.loads(response['Body'].read().decode())
-        return response_body
+        # Procesar la respuesta
+        result = json.loads(response['Body'].read().decode())
+        return result
         
     except Exception as e:
         logger.error(f"Error al invocar el modelo Llama: {str(e)}")
