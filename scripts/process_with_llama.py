@@ -199,22 +199,21 @@ def invoke_llama_model(text: str, endpoint_name: str, model_name: str) -> Option
         sagemaker_runtime = boto3.client('sagemaker-runtime', region_name=region)
         
         # Preparar los parámetros para la invocación
-        parameters = {
-            "model_name": model_name,
-            "max_new_tokens": 2048,
-            "temperature": 0.7,
-            "top_p": 0.9,
-            "do_sample": True
+        payload = {
+            "inputs": text,
+            "parameters": {
+                "max_new_tokens": 2048,
+                "temperature": 0.7,
+                "top_p": 0.9,
+                "model_name": model_name
+            }
         }
         
         # Invocar el endpoint
         response = sagemaker_runtime.invoke_endpoint(
             EndpointName=endpoint_name,
             ContentType='application/json',
-            Body=json.dumps({
-                "inputs": text,
-                "parameters": parameters
-            })
+            Body=json.dumps(payload)
         )
         
         # Procesar la respuesta
@@ -222,7 +221,7 @@ def invoke_llama_model(text: str, endpoint_name: str, model_name: str) -> Option
         return response_body.get('generated_text', '')
         
     except Exception as e:
-        logger.error(f"Error invocando el modelo Llama: {str(e)}")
+        logger.error(f"Error invocando el modelo Llama 2: {str(e)}")
         return None
 
 def validate_structure(data: Dict) -> bool:
