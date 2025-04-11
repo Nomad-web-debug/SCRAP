@@ -218,7 +218,8 @@ def invoke_llama_model(text: str, filename: str, endpoint_name: str, region: str
                 "max_new_tokens": 2048,
                 "temperature": 0.1,
                 "top_p": 0.9,
-                "do_sample": True
+                "do_sample": True,
+                "model_name": model_name
             }
         }
         
