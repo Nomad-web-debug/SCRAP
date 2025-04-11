@@ -217,14 +217,14 @@ def invoke_llama(text, filename, endpoint_name):
         
         # Preparar el payload con el formato correcto
         payload = {
+            "model_name": model_name,
             "inputs": prompt,
             "parameters": {
                 "max_new_tokens": 2048,
                 "temperature": 0.1,
                 "top_p": 0.9,
                 "do_sample": True
-            },
-            "model_name": model_name
+            }
         }
         
         # Invocar el endpoint
