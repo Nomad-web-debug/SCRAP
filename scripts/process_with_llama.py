@@ -200,7 +200,6 @@ def invoke_llama_model(text: str, endpoint_name: str, model_name: str) -> Option
         
         # Preparar los parámetros para la invocación
         parameters = {
-            "model_name": model_name,
             "max_new_tokens": 2048,
             "temperature": 0.7,
             "top_p": 0.9,
@@ -212,6 +211,7 @@ def invoke_llama_model(text: str, endpoint_name: str, model_name: str) -> Option
             EndpointName=endpoint_name,
             ContentType='application/json',
             Body=json.dumps({
+                "model_name": model_name,
                 "inputs": text,
                 "parameters": parameters
             })
