@@ -198,14 +198,15 @@ def invoke_llama_model(text: str, endpoint_name: str, model_name: str) -> Option
         # Inicializar el cliente de SageMaker con la región
         sagemaker_runtime = boto3.client('sagemaker-runtime', region_name=region)
         
-        # Preparar el payload con el model_name en el nivel superior
+        # Preparar el payload con el modelo y el texto
         payload = {
             "model_name": model_name,
             "inputs": text,
             "parameters": {
                 "max_new_tokens": 2048,
-                "temperature": 0.1,
-                "top_p": 0.9
+                "temperature": 0.1,  # Reducido para mayor precisión
+                "top_p": 0.1,       # Reducido para mayor precisión
+                "do_sample": False  # Desactivado para evitar aleatoriedad
             }
         }
         
@@ -219,12 +220,12 @@ def invoke_llama_model(text: str, endpoint_name: str, model_name: str) -> Option
             Body=payload_json
         )
         
-        # Leer y decodificar la respuesta
+        # Decodificar la respuesta
         response_body = response['Body'].read().decode('utf-8')
         return response_body
         
     except Exception as e:
-        logger.error(f"Error invocando el modelo Llama: {str(e)}")
+        logger.error(f"Error invocando el modelo Llama 2: {str(e)}")
         return None
 
 def validate_structure(data: Dict) -> bool:
