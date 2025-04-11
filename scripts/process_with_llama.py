@@ -200,12 +200,12 @@ def invoke_llama_model(text: str, endpoint_name: str, model_name: str) -> Option
         
         # Preparar los parámetros para la invocación
         payload = {
+            "model_name": model_name,
             "inputs": text,
             "parameters": {
                 "max_new_tokens": 2048,
                 "temperature": 0.7,
-                "top_p": 0.9,
-                "model_name": model_name
+                "top_p": 0.9
             }
         }
         
