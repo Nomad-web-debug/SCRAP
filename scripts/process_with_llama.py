@@ -209,11 +209,14 @@ def invoke_llama_model(text: str, endpoint_name: str, model_name: str) -> Option
             }
         }
         
+        # Convertir el payload a JSON
+        payload_json = json.dumps(payload)
+        
         # Invocar el endpoint
         response = sagemaker_runtime.invoke_endpoint(
             EndpointName=endpoint_name,
             ContentType='application/json',
-            Body=json.dumps(payload)
+            Body=payload_json
         )
         
         # Decodificar la respuesta
