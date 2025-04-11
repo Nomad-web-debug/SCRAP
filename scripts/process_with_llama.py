@@ -187,15 +187,11 @@ def generate_prompt(text: str, filename: str) -> str:
     Genera una respuesta JSON válida que siga exactamente el formato especificado.
     </response>"""
 
-def invoke_llama(text, filename, endpoint_name):
-    """Invoca el modelo Llama en SageMaker"""
+def invoke_llama_model(text: str, filename: str, endpoint_name: str, region: str) -> Dict:
+    """
+    Invoca el modelo Llama 2 en SageMaker para procesar el texto
+    """
     try:
-        # Obtener región de AWS
-        region = boto3.Session().region_name
-        if not region:
-            region = 'us-east-1'
-        
-        # Crear cliente de SageMaker
         runtime = boto3.client('sagemaker-runtime', region_name=region)
         sagemaker = boto3.client('sagemaker', region_name=region)
         
@@ -217,7 +213,6 @@ def invoke_llama(text, filename, endpoint_name):
         
         # Preparar el payload con el formato correcto
         payload = {
-            "model_name": model_name,
             "inputs": prompt,
             "parameters": {
                 "max_new_tokens": 2048,
@@ -453,7 +448,7 @@ def main():
             text = clean_text(text)
             
             # Invocar modelo
-            result = invoke_llama(text, filename, args.endpoint)
+            result = invoke_llama_model(text, filename, args.endpoint, boto3.Session().region_name)
             
             # Validar estructura
             if not validate_structure(result):
