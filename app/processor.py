@@ -136,7 +136,7 @@ class NormaProcessor:
         self.embeddings = HuggingFaceEmbeddings(
             model_name="sentence-transformers/paraphrase-multilingual-mpnet-base-v2"
         )
-    
+        
     def process_document(self, bucket: str, key: str) -> Dict[str, Any]:
         """
         Procesa un documento PDF completo
@@ -303,8 +303,8 @@ class NormaProcessor:
                             'capitulo_padre': articulo.get('capitulo_padre')
                         }
                     )
-                
-        except Exception as e:
+                    
+            except Exception as e:
             logger.error(f"Error guardando documento: {str(e)}")
             raise
 
@@ -415,10 +415,10 @@ class TextStructureProcessor:
         
         # Extraer tipo y número de norma
         match = re.search(self.patrones['tipo_norma'], text)
-        if match:
+            if match:
             metadata['tipo_norma'] = match.group(1)
             metadata['numero_norma'] = match.group(2)
-        
+
         return metadata
 
     def process_document(self, text: str, filename: str) -> Dict:
@@ -492,11 +492,11 @@ class PDFProcessor:
                             texto_completo += texto + "\n"
             
             return texto_completo.strip()
-            
+                
         except Exception as e:
             logger.error(f"Error procesando PDF {pdf_path}: {str(e)}")
             raise
-    
+
     def extract_metadata_from_pdf(self, pdf_path: str) -> Dict[str, Any]:
         """
         Extrae metadatos del PDF
@@ -685,7 +685,7 @@ class QualityValidator:
                             return False  # Artículo duplicado
                 
                 return True
-                
+            
         except Exception as e:
             logger.error(f"Error validando relaciones: {str(e)}")
             return False
