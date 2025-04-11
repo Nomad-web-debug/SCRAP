@@ -204,9 +204,9 @@ def invoke_llama_model(text: str, endpoint_name: str, model_name: str) -> Option
             "inputs": text,
             "parameters": {
                 "max_new_tokens": 2048,
-                "temperature": 0.1,  # Reducido para mayor precisión
-                "top_p": 0.1,       # Reducido para mayor precisión
-                "do_sample": False  # Desactivado para evitar aleatoriedad
+                "temperature": 0.1,
+                "top_p": 0.1,
+                "do_sample": False
             }
         }
         
@@ -218,7 +218,15 @@ def invoke_llama_model(text: str, endpoint_name: str, model_name: str) -> Option
             EndpointName=endpoint_name,
             ContentType='application/json',
             Body=payload_json,
-            CustomAttributes=f'{{"model_name": "{model_name}"}}'
+            CustomAttributes=json.dumps({
+                "model_name": model_name,
+                "parameters": {
+                    "max_new_tokens": 2048,
+                    "temperature": 0.1,
+                    "top_p": 0.1,
+                    "do_sample": False
+                }
+            })
         )
         
         # Decodificar la respuesta
