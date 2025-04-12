@@ -3,104 +3,67 @@ name: Procesamiento de PDFs Locales
 on:
   workflow_dispatch:
     inputs:
-      input_dir:
-        description: 'Directorio con PDFs a procesar'
+      pdf_path:
+        description: 'Ruta al archivo PDF a procesar'
         required: true
-        default: 'pdfs_local'
-      output_dir:
-        description: 'Directorio para resultados'
+        default: 'pdfs/'
+      aws_region:
+        description: 'Región de AWS'
         required: true
-        default: 'estructurados_local'
+        default: 'us-east-1'
+      modelo:
+        description: 'Modelo a utilizar (7b, 13b, 70b)'
+        required: true
+        default: '13b'
+        type: choice
+        options:
+          - '7b'
+          - '13b'
+          - '70b'
 
-# Asegurar permisos necesarios para GitHub Actions
-permissions:
-  contents: write
-  pages: write
-  id-token: write
+env:
+  AWS_REGION: ${{ inputs.aws_region }}
+  MODELO: ${{ inputs.modelo }}
 
 jobs:
-  process-pdfs:
+  process-pdf:
     runs-on: ubuntu-latest
-    
-    env:
-      AWS_REGION: us-east-1
-      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
     
     steps:
     - uses: actions/checkout@v3
-      with:
-        token: ${{ secrets.GITHUB_TOKEN }}
-
+    
     - name: Configurar Python
       uses: actions/setup-python@v4
       with:
         python-version: '3.10'
-        cache: 'pip'
-
+    
     - name: Instalar dependencias
       run: |
         python -m pip install --upgrade pip
-        pip install PyMuPDF pandas boto3
-
-    - name: Verificar endpoint activo
-      id: get-endpoint
+        pip install -r requirements.txt
+        pip install PyMuPDF
+        pip install boto3
+        pip install pandas
+    
+    - name: Configurar credenciales AWS
+      env:
+        AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
       run: |
-        # Verificar si existe el archivo de estado
-        if [ ! -f "data/endpoint_state.json" ]; then
-          echo "Error: No se encontró un endpoint configurado"
-          echo "Por favor, ejecuta primero el workflow 'Configurar Endpoint SageMaker'"
-          exit 1
-        fi
-        
-        # Obtener información del endpoint
-        ENDPOINT_NAME=$(python -c "import json; print(json.load(open('data/endpoint_state.json'))['endpoint_name'])")
-        MODELO=$(python -c "import json; print(json.load(open('data/endpoint_state.json'))['modelo'])")
-        
-        # Verificar que el endpoint existe en SageMaker
-        aws sagemaker describe-endpoint --endpoint-name "$ENDPOINT_NAME" || {
-          echo "Error: El endpoint $ENDPOINT_NAME no existe en SageMaker"
-          echo "Por favor, ejecuta primero el workflow 'Configurar Endpoint SageMaker'"
-          exit 1
-        }
-        
-        echo "endpoint_name=$ENDPOINT_NAME" >> $GITHUB_ENV
-        echo "modelo=$MODELO" >> $GITHUB_ENV
-        
+        aws configure set aws_access_key_id $AWS_ACCESS_KEY_ID
+        aws configure set aws_secret_access_key $AWS_SECRET_ACCESS_KEY
+        aws configure set region $AWS_REGION
+    
+    - name: Procesar PDF
+      run: |
+        ENDPOINT_NAME="llama-2-$MODELO-endpoint"
+        MODEL_NAME="llama-2-$MODELO-chat"
         echo "Usando endpoint: $ENDPOINT_NAME (Modelo: Llama 2 $MODELO)"
-
-    - name: Verificar credenciales AWS
-      run: |
-        if [ -z "$AWS_REGION" ] || [ -z "$AWS_ACCESS_KEY_ID" ] || [ -z "$AWS_SECRET_ACCESS_KEY" ]; then
-          echo "Error: Faltan credenciales de AWS"
-          exit 1
-        fi
-
-    - name: Verificar directorios
-      run: |
-        if [ ! -d "${{ github.event.inputs.input_dir }}" ]; then
-          echo "Error: Directorio de entrada no existe"
-          exit 1
-        fi
-        mkdir -p "${{ github.event.inputs.output_dir }}"
-        mkdir -p "public"
-
-    - name: Verificar PDFs
-      run: |
-        echo "Verificando PDFs en ${{ github.event.inputs.input_dir }}"
-        count=$(ls -1 "${{ github.event.inputs.input_dir }}"/*.pdf 2>/dev/null | wc -l)
-        if [ $count -eq 0 ]; then
-          echo "No se encontraron archivos PDF"
-          exit 1
-        fi
-        echo "Encontrados $count archivos PDF"
-
-    - name: Procesar PDFs con Llama
-      run: |
         python scripts/process_with_llama.py \
-          --input-dir "${{ github.event.inputs.input_dir }}" \
-          --output-dir "${{ github.event.inputs.output_dir }}" \
-          --endpoint "${{ env.endpoint_name }}"
+          --input-dir "${{ inputs.pdf_path }}" \
+          --output-dir "estructurados_local" \
+          --endpoint $ENDPOINT_NAME \
+          --model $MODEL_NAME
 
     - name: Mostrar información del procesamiento
       if: always()
@@ -108,24 +71,24 @@ jobs:
         echo "Procesamiento completado con:"
         echo "- Endpoint: ${{ env.endpoint_name }}"
         echo "- Modelo: Llama 2 ${{ env.modelo }}"
-        echo "- Directorio entrada: ${{ github.event.inputs.input_dir }}"
-        echo "- Directorio salida: ${{ github.event.inputs.output_dir }}"
+        echo "- Directorio entrada: ${{ inputs.pdf_path }}"
+        echo "- Directorio salida: ${{ env.output_dir }}"
 
     - name: Generar página de descargas
       if: always()
       run: |
         # Verificar si hay archivos procesados
-        if [ ! -d "${{ github.event.inputs.output_dir }}" ] || [ -z "$(ls -A ${{ github.event.inputs.output_dir }})" ]; then
+        if [ ! -d "${{ env.output_dir }}" ] || [ -z "$(ls -A ${{ env.output_dir }})" ]; then
           echo "No hay archivos procesados para comprimir"
-          mkdir -p "${{ github.event.inputs.output_dir }}"
-          echo "No se procesaron documentos correctamente" > "${{ github.event.inputs.output_dir }}/error.txt"
+          mkdir -p "${{ env.output_dir }}"
+          echo "No se procesaron documentos correctamente" > "${{ env.output_dir }}/error.txt"
         fi
 
         timestamp=$(date +%Y%m%d_%H%M%S)
         mkdir -p public
         
         # Comprimir resultados (incluyendo mensaje de error si existe)
-        cd "${{ github.event.inputs.output_dir }}"
+        cd "${{ env.output_dir }}"
         zip -r "../public/resultados_${timestamp}.zip" . || echo "Error al crear ZIP"
         cd ..
         
@@ -232,5 +195,5 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: resultados-procesamiento
-        path: ${{ github.event.inputs.output_dir }}
+        path: ${{ env.output_dir }}
         retention-days: 7 
