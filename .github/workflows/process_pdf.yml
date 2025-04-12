@@ -54,5 +54,10 @@ jobs:
     - name: Procesar PDF
       run: |
         ENDPOINT_NAME="llama-2-$MODELO-endpoint"
+        MODEL_NAME="llama-2-$MODELO-chat"
         echo "Usando endpoint: $ENDPOINT_NAME (Modelo: Llama 2 $MODELO)"
-        python scripts/process_pdf.py --pdf_path "${{ inputs.pdf_path }}" --endpoint_name $ENDPOINT_NAME 
+        python scripts/process_with_llama.py \
+          --input-dir "${{ inputs.pdf_path }}" \
+          --output-dir "estructurados_local" \
+          --endpoint $ENDPOINT_NAME \
+          --model $MODEL_NAME 
