@@ -207,19 +207,14 @@ def invoke_llama_model(text: str, endpoint_name: str, model_name: str) -> Option
         logger.info(f"Cliente SageMaker inicializado para endpoint: {endpoint_name}")
         
         payload = {
-            "inputs": [
-                {
-                    "role": "user",
-                    "content": text
-                }
-            ],
+            "model_name": model_name,
+            "prompt": text,
             "parameters": {
                 "max_new_tokens": 2048,
                 "temperature": 0.7,
                 "top_p": 0.9,
                 "do_sample": True
-            },
-            "model_name": model_name  # Incluir model_name en el payload
+            }
         }
         
         logger.info(f"Invocando endpoint {endpoint_name} con modelo {model_name}")
@@ -247,7 +242,11 @@ def invoke_llama_model(text: str, endpoint_name: str, model_name: str) -> Option
             
     except Exception as e:
         logger.error(f"Error invocando el modelo Llama: {str(e)}")
-        logger.error(f"Payload enviado: {json.dumps(payload, indent=2)}")
+        # Crear una copia del payload para el log con el texto truncado
+        log_payload = payload.copy()
+        if len(log_payload.get("prompt", "")) > 100:
+            log_payload["prompt"] = log_payload["prompt"][:100] + "... (texto truncado)"
+        logger.error(f"Payload enviado: {json.dumps(log_payload, indent=2)}")
         logger.error(f"Endpoint: {endpoint_name}")
         logger.error(f"Modelo: {model_name}")
         return None
