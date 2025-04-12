@@ -457,6 +457,7 @@ def main():
     parser.add_argument('--input-dir', required=True, help='Directorio con PDFs a procesar')
     parser.add_argument('--output-dir', required=True, help='Directorio para guardar resultados')
     parser.add_argument('--endpoint', required=True, help='Nombre del endpoint de SageMaker')
+    parser.add_argument('--model', required=True, help='Nombre del modelo a usar (ej: llama-2-13b-chat)')
     args = parser.parse_args()
     
     # Crear directorio de salida si no existe
@@ -478,7 +479,7 @@ def main():
             text = clean_text(text)
             
             # Invocar modelo
-            result = invoke_llama_model(text, args.endpoint, boto3.Session().region_name)
+            result = invoke_llama_model(text, args.endpoint, args.model)
             
             # Validar estructura
             if not validate_structure(result):
@@ -511,5 +512,4 @@ def main():
         logging.warning('No se procesó ningún documento correctamente')
 
 if __name__ == '__main__':
-    main() 
     main() 
