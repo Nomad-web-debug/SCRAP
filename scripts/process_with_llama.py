@@ -219,10 +219,12 @@ def invoke_llama_model(text: str, endpoint_name: str, model_name: str) -> Option
         sagemaker_runtime = boto3.client('sagemaker-runtime', region_name=region)
         logger.info(f"Cliente SageMaker inicializado para endpoint: {endpoint_name}")
         
-        # Nuevo formato del payload
+        # Formato estándar de SageMaker
         payload = {
-            "model_name": model_name,  # Parámetro requerido
-            "inputs": text,  # Texto directo como input
+            "inputs": [[{
+                "role": "user",
+                "content": text
+            }]],
             "parameters": {
                 "max_new_tokens": 2048,
                 "temperature": 0.7,
@@ -235,13 +237,15 @@ def invoke_llama_model(text: str, endpoint_name: str, model_name: str) -> Option
         
         # Crear versión truncada para logs
         log_payload = payload.copy()
-        if isinstance(log_payload.get("inputs"), str) and len(log_payload["inputs"]) > 100:
-            log_payload["inputs"] = log_payload["inputs"][:100] + "... (texto truncado)"
+        if isinstance(log_payload["inputs"][0][0]["content"], str) and len(log_payload["inputs"][0][0]["content"]) > 100:
+            log_payload["inputs"][0][0]["content"] = log_payload["inputs"][0][0]["content"][:100] + "... (texto truncado)"
         logger.debug(f"Payload a enviar (truncado): {json.dumps(log_payload, indent=2)}")
         
+        # Agregar model_name como CustomAttributes
         response = sagemaker_runtime.invoke_endpoint(
             EndpointName=endpoint_name,
             ContentType='application/json',
+            CustomAttributes=json.dumps({"model_name": model_name}),
             Body=json.dumps(payload)
         )
         
