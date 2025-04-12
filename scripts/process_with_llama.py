@@ -201,7 +201,6 @@ def invoke_llama_model(text: str, endpoint_name: str, model_name: str) -> Option
         # Preparar el payload
         payload = {
             "inputs": text,
-            "model_name": model_name,
             "parameters": {
                 "max_new_tokens": 2048,
                 "temperature": 0.7,
@@ -209,11 +208,12 @@ def invoke_llama_model(text: str, endpoint_name: str, model_name: str) -> Option
             }
         }
         
-        # Invocar el endpoint
+        # Invocar el endpoint con CustomAttributes
         response = sagemaker_runtime.invoke_endpoint(
             EndpointName=endpoint_name,
             ContentType='application/json',
-            Body=json.dumps(payload)
+            Body=json.dumps(payload),
+            CustomAttributes=f"model_name={model_name}"
         )
         
         # Procesar la respuesta
