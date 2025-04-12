@@ -218,17 +218,14 @@ def invoke_llama_model(text: str, endpoint_name: str, model_name: str) -> Option
                 "temperature": 0.7,
                 "top_p": 0.9,
                 "do_sample": True
-            }
+            },
+            "model_name": model_name  # Incluir model_name en el payload
         }
-        
-        # Configurar los headers y CustomAttributes
-        custom_attributes = f"model_name={model_name}"
         
         logger.info(f"Invocando endpoint {endpoint_name} con modelo {model_name}")
         response = sagemaker_runtime.invoke_endpoint(
             EndpointName=endpoint_name,
             ContentType='application/json',
-            CustomAttributes=custom_attributes,
             Body=json.dumps(payload)
         )
         
@@ -251,7 +248,6 @@ def invoke_llama_model(text: str, endpoint_name: str, model_name: str) -> Option
     except Exception as e:
         logger.error(f"Error invocando el modelo Llama: {str(e)}")
         logger.error(f"Payload enviado: {json.dumps(payload, indent=2)}")
-        logger.error(f"CustomAttributes: {custom_attributes}")
         logger.error(f"Endpoint: {endpoint_name}")
         logger.error(f"Modelo: {model_name}")
         return None
