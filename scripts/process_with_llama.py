@@ -147,45 +147,58 @@ def clean_text(text: str) -> str:
 
 def generate_prompt(text: str, filename: str) -> str:
     """
-    Genera el prompt para Llama-2-70B
+    Genera el prompt para el modelo Llama-2
     """
-    return f"""Analiza el siguiente texto legal del archivo {filename} y genera una estructura JSON detallada.
-    
-    Instrucciones específicas:
-    1. Identifica el tipo de documento legal
-    2. Extrae la estructura jerárquica completa
-    3. Genera un ID único basado en el contenido
-    4. Identifica artículos, capítulos y secciones
-    5. Extrae referencias y citas
-    6. Genera tags relevantes
-    
-    El resultado debe seguir este formato exacto:
-    {{
-        "id": "string",
-        "documento": "string",
-        "tipo_documento": "string",
-        "estructura": {{
-            "capitulos": [
-                {{
-                    "titulo": "string",
-                    "articulos": [
-                        {{
-                            "numero": "string",
-                            "contenido": "string",
-                            "referencias": ["string"]
-                        }}
-                    ]
-                }}
-            ]
-        }},
-        "tags": ["string"]
-    }}
-    
-    Texto a analizar:
-    {text}
-    
-    Genera una respuesta JSON válida que siga exactamente el formato especificado.
-    </response>"""
+    return f"""Analiza el siguiente texto legal del archivo {filename}. Tu tarea es extraer e interpretar información específica manteniendo la precisión del texto original donde sea necesario.
+
+IMPORTANTE - Reglas de extracción:
+1. CAMPOS QUE DEBEN SER EXACTOS (copiar tal cual del texto):
+   - Número de artículos
+   - Títulos de capítulos/secciones
+   - Contenido de artículos
+   - Referencias y citas textuales
+   - Nombres de leyes y decretos
+   - Fechas
+
+2. CAMPOS QUE REQUIEREN TU INTERPRETACIÓN:
+   - Tipo de documento (basado en su estructura y contenido)
+   - Tags relevantes
+   - Clasificación de la rama del derecho
+   - Resumen o descripción general
+
+3. REGLAS DE PROCESAMIENTO:
+   - NO inventes información que no esté en el texto
+   - NO modifiques el texto de los artículos
+   - NO agregues interpretaciones en campos que deben ser exactos
+   - SI el texto no contiene alguna información requerida, usa null o lista vacía según corresponda
+
+El resultado debe seguir este formato JSON:
+{{
+    "id": "string (generado del nombre del archivo)",
+    "documento": "string (nombre exacto del documento)",
+    "tipo_documento": "string (tu interpretación)",
+    "estructura": {{
+        "capitulos": [
+            {{
+                "titulo": "string (exacto del texto)",
+                "articulos": [
+                    {{
+                        "numero": "string (exacto)",
+                        "contenido": "string (exacto)",
+                        "referencias": ["string (exactas)"]
+                    }}
+                ]
+            }}
+        ]
+    }},
+    "tags": ["string (tu interpretación)"]
+}}
+
+Texto a analizar:
+{text}
+
+Genera una respuesta JSON válida que siga exactamente el formato especificado, manteniendo la precisión donde se requiere.
+</response>"""
 
 def invoke_llama_model(text: str, endpoint_name: str, model_name: str) -> Optional[str]:
     """
@@ -206,30 +219,25 @@ def invoke_llama_model(text: str, endpoint_name: str, model_name: str) -> Option
         sagemaker_runtime = boto3.client('sagemaker-runtime', region_name=region)
         logger.info(f"Cliente SageMaker inicializado para endpoint: {endpoint_name}")
         
-        # Estructura del payload modificada
+        # Nuevo formato del payload
         payload = {
-            "inputs": [{
-                "name": "text",
-                "shape": [1],
-                "datatype": "BYTES",
-                "data": [text]
-            }],
+            "model_name": model_name,  # Parámetro requerido
+            "inputs": text,  # Texto directo como input
             "parameters": {
                 "max_new_tokens": 2048,
                 "temperature": 0.7,
                 "top_p": 0.9,
                 "do_sample": True
-            },
-            "model": model_name  # Cambiado de model_name a model
+            }
         }
         
         logger.info(f"Invocando endpoint {endpoint_name} con modelo {model_name}")
         
-        # Para el logging, crear una versión truncada del payload
+        # Crear versión truncada para logs
         log_payload = payload.copy()
-        if len(text) > 100:
-            log_payload["inputs"][0]["data"] = [text[:100] + "... (texto truncado)"]
-        logger.debug(f"Payload a enviar (truncado para log): {json.dumps(log_payload, indent=2)}")
+        if isinstance(log_payload.get("inputs"), str) and len(log_payload["inputs"]) > 100:
+            log_payload["inputs"] = log_payload["inputs"][:100] + "... (texto truncado)"
+        logger.debug(f"Payload a enviar (truncado): {json.dumps(log_payload, indent=2)}")
         
         response = sagemaker_runtime.invoke_endpoint(
             EndpointName=endpoint_name,
