@@ -206,18 +206,31 @@ def invoke_llama_model(text: str, endpoint_name: str, model_name: str) -> Option
         sagemaker_runtime = boto3.client('sagemaker-runtime', region_name=region)
         logger.info(f"Cliente SageMaker inicializado para endpoint: {endpoint_name}")
         
+        # Estructura del payload modificada
         payload = {
-            "model_name": model_name,
-            "prompt": text,
+            "inputs": [{
+                "name": "text",
+                "shape": [1],
+                "datatype": "BYTES",
+                "data": [text]
+            }],
             "parameters": {
                 "max_new_tokens": 2048,
                 "temperature": 0.7,
                 "top_p": 0.9,
                 "do_sample": True
-            }
+            },
+            "model": model_name  # Cambiado de model_name a model
         }
         
         logger.info(f"Invocando endpoint {endpoint_name} con modelo {model_name}")
+        
+        # Para el logging, crear una versión truncada del payload
+        log_payload = payload.copy()
+        if len(text) > 100:
+            log_payload["inputs"][0]["data"] = [text[:100] + "... (texto truncado)"]
+        logger.debug(f"Payload a enviar (truncado para log): {json.dumps(log_payload, indent=2)}")
+        
         response = sagemaker_runtime.invoke_endpoint(
             EndpointName=endpoint_name,
             ContentType='application/json',
@@ -242,11 +255,9 @@ def invoke_llama_model(text: str, endpoint_name: str, model_name: str) -> Option
             
     except Exception as e:
         logger.error(f"Error invocando el modelo Llama: {str(e)}")
-        # Crear una copia del payload para el log con el texto truncado
-        log_payload = payload.copy()
-        if len(log_payload.get("prompt", "")) > 100:
-            log_payload["prompt"] = log_payload["prompt"][:100] + "... (texto truncado)"
-        logger.error(f"Payload enviado: {json.dumps(log_payload, indent=2)}")
+        # Usar la versión truncada del payload para el log de error
+        if 'log_payload' in locals():
+            logger.error(f"Payload enviado (truncado): {json.dumps(log_payload, indent=2)}")
         logger.error(f"Endpoint: {endpoint_name}")
         logger.error(f"Modelo: {model_name}")
         return None

@@ -1,148 +1,82 @@
-name: Procesamiento de PDFs Locales
+name: Process PDFs with Llama
 
 on:
+  push:
+    branches: [ main ]
   workflow_dispatch:
-    inputs:
-      pdf_path:
-        description: 'Ruta al archivo PDF a procesar'
-        required: true
-        default: 'pdfs/'
-      aws_region:
-        description: 'Región de AWS'
-        required: true
-        default: 'us-east-1'
-      modelo:
-        description: 'Modelo a utilizar (7b, 13b, 70b)'
-        required: true
-        default: '13b'
-        type: choice
-        options:
-          - '7b'
-          - '13b'
-          - '70b'
 
-# Asegurar permisos necesarios para GitHub Actions
+# Sets permissions of the GITHUB_TOKEN to allow deployment to GitHub Pages
 permissions:
-  contents: write
+  contents: read
   pages: write
   id-token: write
 
+# Allow only one concurrent deployment
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
 env:
-  AWS_REGION: ${{ inputs.aws_region }}
-  MODELO: ${{ inputs.modelo }}
+  AWS_REGION: us-east-1
+  MODELO: 13b
   OUTPUT_DIR: estructurados_local
 
 jobs:
-  process-pdf:
+  process-pdfs:
     runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
     
     steps:
-    - uses: actions/checkout@v3
-      with:
-        token: ${{ secrets.GITHUB_TOKEN }}
+    - uses: actions/checkout@v4
     
-    - name: Configurar Python
+    - name: Set up Python
       uses: actions/setup-python@v4
       with:
         python-version: '3.10'
-    
-    - name: Instalar dependencias
+        
+    - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install -r requirements.txt
-        pip install PyMuPDF
-        pip install boto3
-        pip install pandas
-    
-    - name: Configurar credenciales AWS
-      env:
-        AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-        AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        pip install PyMuPDF boto3 pandas
+        
+    - name: Configure AWS credentials
       run: |
-        aws configure set aws_access_key_id $AWS_ACCESS_KEY_ID
-        aws configure set aws_secret_access_key $AWS_SECRET_ACCESS_KEY
+        aws configure set aws_access_key_id ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws configure set aws_secret_access_key ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         aws configure set region $AWS_REGION
-
-    - name: Preparar directorios
+        
+    - name: Create output directories
       run: |
         mkdir -p ${{ env.OUTPUT_DIR }}
         mkdir -p public
         chmod -R 777 ${{ env.OUTPUT_DIR }}
         chmod -R 777 public
-    
-    - name: Procesar PDF
+        
+    - name: Process PDFs
       run: |
         ENDPOINT_NAME="llama-2-$MODELO-endpoint"
         MODEL_NAME="llama-2-$MODELO-chat"
         echo "Usando endpoint: $ENDPOINT_NAME (Modelo: Llama 2 $MODELO)"
         python scripts/process_with_llama.py \
-          --input-dir "${{ inputs.pdf_path }}" \
+          --input-dir "pdfs/" \
           --output-dir "${{ env.OUTPUT_DIR }}" \
           --endpoint $ENDPOINT_NAME \
           --model $MODEL_NAME
-
-    - name: Configurar GitHub Pages
-      uses: actions/configure-pages@v4
-
-    - name: Generar página de descargas
-      if: always()
+          
+    - name: Copy results to public directory
       run: |
-        timestamp=$(date +%Y%m%d_%H%M%S)
+        cp -r ${{ env.OUTPUT_DIR }}/* public/
         
-        # Verificar si hay archivos procesados
-        if [ ! -d "${{ env.OUTPUT_DIR }}" ] || [ -z "$(ls -A ${{ env.OUTPUT_DIR }})" ]; then
-          echo "No hay archivos procesados para comprimir"
-          echo "No se procesaron documentos correctamente" > "${{ env.OUTPUT_DIR }}/error.txt"
-        fi
-        
-        # Comprimir resultados
-        cd ${{ env.OUTPUT_DIR }}
-        zip -r "../public/resultados_${timestamp}.zip" . || echo "Error al crear ZIP"
-        cd ..
-        
-        # Crear página web con enlaces
-        cat > public/index.html << 'EOF'
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <title>Descargar Resultados Procesados</title>
-            <meta charset="UTF-8">
-            <style>
-                body { font-family: Arial, sans-serif; max-width: 800px; margin: 40px auto; padding: 20px; background-color: #f5f5f5; }
-                .container { background-color: white; padding: 30px; border-radius: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
-                .download-section { margin: 20px 0; padding: 20px; border: 1px solid #e0e0e0; border-radius: 5px; }
-                .download-button { display: inline-block; padding: 12px 24px; background-color: #4CAF50; color: white; text-decoration: none; border-radius: 5px; margin: 10px 0; }
-                .timestamp { color: #666; font-size: 0.9em; margin-top: 10px; }
-            </style>
-        </head>
-        <body>
-            <div class="container">
-                <h1>Resultados del Procesamiento</h1>
-                <div class="download-section">
-                    <h2>Descargar Resultados</h2>
-                    <a href="resultados_${timestamp}.zip" class="download-button">Descargar ZIP</a>
-                    <p class="timestamp">Última actualización: $(date '+%Y-%m-%d %H:%M:%S')</p>
-                </div>
-            </div>
-        </body>
-        </html>
-        EOF
-
-    - name: Publicar en GitHub Pages
-      if: always()
-      uses: peaceiris/actions-gh-pages@v3
+    - name: Setup Pages
+      uses: actions/configure-pages@v4
+      
+    - name: Upload artifact
+      uses: actions/upload-pages-artifact@v3
       with:
-        github_token: ${{ secrets.GITHUB_TOKEN }}
-        publish_dir: ./public
-        force_orphan: true
-        commit_message: "Actualizar resultados del procesamiento [skip ci]"
-        user_name: 'github-actions[bot]'
-        user_email: 'github-actions[bot]@users.noreply.github.com'
-
-    - name: Guardar artefactos
-      if: always()
-      uses: actions/upload-artifact@v4
-      with:
-        name: resultados-procesamiento
-        path: ${{ env.OUTPUT_DIR }}
-        retention-days: 7 
+        path: 'public'
+        
+    - name: Deploy to GitHub Pages
+      id: deployment
+      uses: actions/deploy-pages@v4 
