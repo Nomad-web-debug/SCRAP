@@ -21,6 +21,12 @@ on:
           - '13b'
           - '70b'
 
+# Asegurar permisos necesarios para GitHub Actions
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
 env:
   AWS_REGION: ${{ inputs.aws_region }}
   MODELO: ${{ inputs.modelo }}
@@ -32,6 +38,8 @@ jobs:
     
     steps:
     - uses: actions/checkout@v3
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
     
     - name: Configurar Python
       uses: actions/setup-python@v4
@@ -72,6 +80,9 @@ jobs:
           --output-dir "${{ env.OUTPUT_DIR }}" \
           --endpoint $ENDPOINT_NAME \
           --model $MODEL_NAME
+
+    - name: Configurar GitHub Pages
+      uses: actions/configure-pages@v4
 
     - name: Generar página de descargas
       if: always()
@@ -124,6 +135,9 @@ jobs:
         github_token: ${{ secrets.GITHUB_TOKEN }}
         publish_dir: ./public
         force_orphan: true
+        commit_message: "Actualizar resultados del procesamiento [skip ci]"
+        user_name: 'github-actions[bot]'
+        user_email: 'github-actions[bot]@users.noreply.github.com'
 
     - name: Guardar artefactos
       if: always()
