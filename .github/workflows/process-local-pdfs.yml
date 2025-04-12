@@ -24,6 +24,7 @@ on:
 env:
   AWS_REGION: ${{ inputs.aws_region }}
   MODELO: ${{ inputs.modelo }}
+  OUTPUT_DIR: estructurados_local
 
 jobs:
   process-pdf:
@@ -53,6 +54,13 @@ jobs:
         aws configure set aws_access_key_id $AWS_ACCESS_KEY_ID
         aws configure set aws_secret_access_key $AWS_SECRET_ACCESS_KEY
         aws configure set region $AWS_REGION
+
+    - name: Preparar directorios
+      run: |
+        mkdir -p ${{ env.OUTPUT_DIR }}
+        mkdir -p public
+        chmod -R 777 ${{ env.OUTPUT_DIR }}
+        chmod -R 777 public
     
     - name: Procesar PDF
       run: |
@@ -61,123 +69,53 @@ jobs:
         echo "Usando endpoint: $ENDPOINT_NAME (Modelo: Llama 2 $MODELO)"
         python scripts/process_with_llama.py \
           --input-dir "${{ inputs.pdf_path }}" \
-          --output-dir "estructurados_local" \
+          --output-dir "${{ env.OUTPUT_DIR }}" \
           --endpoint $ENDPOINT_NAME \
           --model $MODEL_NAME
-
-    - name: Mostrar información del procesamiento
-      if: always()
-      run: |
-        echo "Procesamiento completado con:"
-        echo "- Endpoint: ${{ env.endpoint_name }}"
-        echo "- Modelo: Llama 2 ${{ env.modelo }}"
-        echo "- Directorio entrada: ${{ inputs.pdf_path }}"
-        echo "- Directorio salida: ${{ env.output_dir }}"
 
     - name: Generar página de descargas
       if: always()
       run: |
-        # Verificar si hay archivos procesados
-        if [ ! -d "${{ env.output_dir }}" ] || [ -z "$(ls -A ${{ env.output_dir }})" ]; then
-          echo "No hay archivos procesados para comprimir"
-          mkdir -p "${{ env.output_dir }}"
-          echo "No se procesaron documentos correctamente" > "${{ env.output_dir }}/error.txt"
-        fi
-
         timestamp=$(date +%Y%m%d_%H%M%S)
-        mkdir -p public
         
-        # Comprimir resultados (incluyendo mensaje de error si existe)
-        cd "${{ env.output_dir }}"
+        # Verificar si hay archivos procesados
+        if [ ! -d "${{ env.OUTPUT_DIR }}" ] || [ -z "$(ls -A ${{ env.OUTPUT_DIR }})" ]; then
+          echo "No hay archivos procesados para comprimir"
+          echo "No se procesaron documentos correctamente" > "${{ env.OUTPUT_DIR }}/error.txt"
+        fi
+        
+        # Comprimir resultados
+        cd ${{ env.OUTPUT_DIR }}
         zip -r "../public/resultados_${timestamp}.zip" . || echo "Error al crear ZIP"
         cd ..
         
         # Crear página web con enlaces
-        cat > public/index.html << EOF
+        cat > public/index.html << 'EOF'
         <!DOCTYPE html>
         <html>
         <head>
             <title>Descargar Resultados Procesados</title>
             <meta charset="UTF-8">
             <style>
-                body {
-                    font-family: Arial, sans-serif;
-                    max-width: 800px;
-                    margin: 40px auto;
-                    padding: 20px;
-                    background-color: #f5f5f5;
-                }
-                .container {
-                    background-color: white;
-                    padding: 30px;
-                    border-radius: 10px;
-                    box-shadow: 0 2px 5px rgba(0,0,0,0.1);
-                }
-                .download-section {
-                    margin: 20px 0;
-                    padding: 20px;
-                    border: 1px solid #e0e0e0;
-                    border-radius: 5px;
-                }
-                .download-button {
-                    display: inline-block;
-                    padding: 12px 24px;
-                    background-color: #4CAF50;
-                    color: white;
-                    text-decoration: none;
-                    border-radius: 5px;
-                    margin: 10px 0;
-                    transition: background-color 0.3s;
-                }
-                .download-button:hover {
-                    background-color: #45a049;
-                }
-                .timestamp {
-                    color: #666;
-                    font-size: 0.9em;
-                    margin-top: 10px;
-                }
-                .header {
-                    border-bottom: 2px solid #4CAF50;
-                    padding-bottom: 10px;
-                    margin-bottom: 20px;
-                }
-                .error-message {
-                    color: #721c24;
-                    background-color: #f8d7da;
-                    border: 1px solid #f5c6cb;
-                    padding: 10px;
-                    margin: 10px 0;
-                    border-radius: 5px;
-                }
+                body { font-family: Arial, sans-serif; max-width: 800px; margin: 40px auto; padding: 20px; background-color: #f5f5f5; }
+                .container { background-color: white; padding: 30px; border-radius: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+                .download-section { margin: 20px 0; padding: 20px; border: 1px solid #e0e0e0; border-radius: 5px; }
+                .download-button { display: inline-block; padding: 12px 24px; background-color: #4CAF50; color: white; text-decoration: none; border-radius: 5px; margin: 10px 0; }
+                .timestamp { color: #666; font-size: 0.9em; margin-top: 10px; }
             </style>
         </head>
         <body>
             <div class="container">
-                <div class="header">
-                    <h1>Resultados del Procesamiento</h1>
-                    <p>Sistema de Procesamiento de Documentos Legales</p>
-                </div>
-                
+                <h1>Resultados del Procesamiento</h1>
                 <div class="download-section">
                     <h2>Descargar Resultados</h2>
-                    <p>Incluye archivos JSON individuales y CSV consolidado</p>
-                    <a href="resultados_${timestamp}.zip" class="download-button">Descargar ZIP Completo</a>
+                    <a href="resultados_${timestamp}.zip" class="download-button">Descargar ZIP</a>
                     <p class="timestamp">Última actualización: $(date '+%Y-%m-%d %H:%M:%S')</p>
-                </div>
-                
-                <div class="download-section">
-                    <h2>Enlaces Directos</h2>
-                    <p>Acceso directo a los archivos procesados:</p>
-                    <a href="resultados_${timestamp}/resultados.csv" class="download-button">CSV Consolidado</a>
                 </div>
             </div>
         </body>
         </html>
         EOF
-
-    - name: Configurar GitHub Pages
-      uses: actions/configure-pages@v4
 
     - name: Publicar en GitHub Pages
       if: always()
@@ -186,14 +124,11 @@ jobs:
         github_token: ${{ secrets.GITHUB_TOKEN }}
         publish_dir: ./public
         force_orphan: true
-        commit_message: "Actualizar resultados del procesamiento [skip ci]"
-        user_name: 'github-actions[bot]'
-        user_email: 'github-actions[bot]@users.noreply.github.com'
 
     - name: Guardar artefactos
       if: always()
       uses: actions/upload-artifact@v4
       with:
         name: resultados-procesamiento
-        path: ${{ env.output_dir }}
+        path: ${{ env.OUTPUT_DIR }}
         retention-days: 7 
