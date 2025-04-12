@@ -190,38 +190,81 @@ def generate_prompt(text: str, filename: str) -> str:
 def invoke_llama_model(text: str, endpoint_name: str, model_name: str) -> Optional[str]:
     """
     Invoca el modelo Llama 2 en SageMaker para procesar el texto
+    
+    Args:
+        text (str): Texto a procesar
+        endpoint_name (str): Nombre del endpoint de SageMaker
+        model_name (str): Nombre del modelo a usar (ej: 'llama-2-7b-chat')
+        
+    Returns:
+        Optional[str]: Texto generado por el modelo o None si hay error
     """
     try:
         # Obtener la región de las variables de entorno
         region = os.environ.get('AWS_REGION', 'us-east-1')
+        logger.info(f"Iniciando invocación del modelo en región {region}")
         
         # Inicializar el cliente de SageMaker con la región
         sagemaker_runtime = boto3.client('sagemaker-runtime', region_name=region)
+        logger.info(f"Cliente SageMaker inicializado para endpoint: {endpoint_name}")
         
-        # Preparar el payload
+        # Preparar el payload según la documentación de Llama 2 en SageMaker
         payload = {
-            "model_name": model_name,
-            "inputs": text,
+            "inputs": [
+                {
+                    "role": "user",
+                    "content": text
+                }
+            ],
             "parameters": {
                 "max_new_tokens": 2048,
                 "temperature": 0.7,
-                "top_p": 0.9
+                "top_p": 0.9,
+                "do_sample": True
             }
         }
+        logger.debug(f"Payload preparado: {json.dumps(payload, indent=2)}")
         
-        # Invocar el endpoint
+        # Configurar los headers necesarios
+        headers = {
+            "Content-Type": "application/json",
+            "X-Amzn-SageMaker-Custom-Attributes": f"model_name={model_name}"
+        }
+        logger.info(f"Headers configurados: {headers}")
+        
+        # Invocar el endpoint con los headers
+        logger.info(f"Invocando endpoint {endpoint_name} con modelo {model_name}")
         response = sagemaker_runtime.invoke_endpoint(
             EndpointName=endpoint_name,
             ContentType='application/json',
-            Body=json.dumps(payload)
+            Body=json.dumps(payload),
+            CustomAttributes=headers["X-Amzn-SageMaker-Custom-Attributes"]
         )
         
         # Procesar la respuesta
         response_body = json.loads(response['Body'].read().decode('utf-8'))
-        return response_body.get('generated_text', '')
+        logger.debug(f"Respuesta recibida: {json.dumps(response_body, indent=2)}")
         
+        # Extraer el texto generado
+        if isinstance(response_body, list) and len(response_body) > 0:
+            generated_text = response_body[0].get('generated_text', '')
+            logger.info("Texto generado extraído de lista de respuestas")
+        elif isinstance(response_body, dict):
+            generated_text = response_body.get('generated_text', '')
+            logger.info("Texto generado extraído de diccionario de respuesta")
+        else:
+            logger.error(f"Formato de respuesta inesperado: {response_body}")
+            return None
+            
+        logger.info("Invocación del modelo completada exitosamente")
+        return generated_text
+            
     except Exception as e:
         logger.error(f"Error invocando el modelo Llama: {str(e)}")
+        logger.error(f"Payload enviado: {json.dumps(payload, indent=2)}")
+        logger.error(f"Headers usados: {headers}")
+        logger.error(f"Endpoint: {endpoint_name}")
+        logger.error(f"Modelo: {model_name}")
         return None
 
 def validate_structure(data: Dict) -> bool:
@@ -468,4 +511,5 @@ def main():
         logging.warning('No se procesó ningún documento correctamente')
 
 if __name__ == '__main__':
+    main() 
     main() 
