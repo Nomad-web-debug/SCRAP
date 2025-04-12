@@ -198,15 +198,15 @@ def invoke_llama_model(text: str, endpoint_name: str, model_name: str) -> Option
         # Inicializar el cliente de SageMaker con la región
         sagemaker_runtime = boto3.client('sagemaker-runtime', region_name=region)
         
-        # Preparar el payload con el texto y el model_name
+        # Preparar el payload con el model_name en el nivel principal
         payload = {
             "inputs": text,
-            "model_name": model_name,
             "parameters": {
                 "max_new_tokens": 2048,
                 "temperature": 0.7,
                 "top_p": 0.9
-            }
+            },
+            "model_name": model_name
         }
         
         # Invocar el endpoint
