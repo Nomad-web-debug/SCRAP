@@ -65,9 +65,45 @@ jobs:
           --endpoint $ENDPOINT_NAME \
           --model $MODEL_NAME
           
-    - name: Copy results to public directory
+    - name: Prepare public directory
       run: |
-        cp -r ${{ env.OUTPUT_DIR }}/* public/
+        # Crear index.html básico
+        cat > public/index.html << 'EOF'
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Resultados del Procesamiento</title>
+            <meta charset="UTF-8">
+            <style>
+                body { font-family: Arial, sans-serif; max-width: 800px; margin: 40px auto; padding: 20px; }
+                .container { padding: 20px; }
+                .status { padding: 15px; margin: 10px 0; border-radius: 5px; }
+                .success { background-color: #e8f5e9; color: #2e7d32; }
+                .error { background-color: #ffebee; color: #c62828; }
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <h1>Resultados del Procesamiento de PDFs</h1>
+                <div class="status" id="status">
+                    Procesando...
+                </div>
+                <div id="results">
+                </div>
+            </div>
+        </body>
+        </html>
+        EOF
+        
+        # Intentar copiar los resultados si existen
+        if [ -d "${{ env.OUTPUT_DIR }}" ] && [ "$(ls -A ${{ env.OUTPUT_DIR }})" ]; then
+          cp -r ${{ env.OUTPUT_DIR }}/* public/
+          echo "Archivos copiados exitosamente"
+        else
+          echo "No hay archivos para copiar en ${{ env.OUTPUT_DIR }}"
+          # Actualizar el estado en index.html
+          sed -i 's/Procesando.../No se encontraron resultados del procesamiento./g' public/index.html
+        fi
         
     - name: Setup Pages
       uses: actions/configure-pages@v4
