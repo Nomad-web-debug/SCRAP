@@ -8,6 +8,7 @@ import boto3
 import fitz  # PyMuPDF
 import pandas as pd
 import glob
+import re
 
 # Configurar logging
 logging.basicConfig(
@@ -78,7 +79,6 @@ def clean_text(text: str) -> str:
         text = text.replace('art.', 'Artículo')
         
         # 7. Normalizar números romanos
-        import re
         roman_pattern = r'\b[IVXLCDM]+\b'
         def normalize_roman(match):
             roman = match.group(0)
@@ -226,6 +226,7 @@ def invoke_llama_model(text: str, endpoint_name: str, model_name: str) -> Option
         payload = {
             "inputs": prompt,
             "parameters": {
+                "model_name": model_name,
                 "max_new_tokens": 2048,
                 "temperature": 0.7,
                 "top_p": 0.9,
@@ -465,6 +466,127 @@ def create_index_html(output_dir: str, csv_file: str, json_files: List[str]):
     except Exception as e:
         logger.error(f"Error creando archivo HTML: {str(e)}")
 
+def dividir_texto_por_secciones(text: str) -> List[str]:
+    """
+    Divide el texto en secciones basadas en patrones comunes de documentos legales.
+    """
+    try:
+        # Patrones para identificar secciones
+        patrones = [
+            r'CAP[ÍI]TULO\s+[IVXLCDM]+',  # CAPÍTULO I, CAPITULO II, etc.
+            r'T[ÍI]TULO\s+[IVXLCDM]+',    # TÍTULO I, TITULO II, etc.
+            r'Art[íi]culo\s+\d+',          # Artículo 1, Articulo 2, etc.
+            r'Secci[óo]n\s+\d+'            # Sección 1, Seccion 2, etc.
+        ]
+        
+        # Unir todos los patrones
+        patron = '|'.join(patrones)
+        
+        # Encontrar todas las coincidencias
+        matches = list(re.finditer(patron, text))
+        
+        if not matches:
+            # Si no hay secciones claras, dividir por longitud
+            max_length = 3000  # Aproximadamente 3000 caracteres
+            return [text[i:i+max_length] for i in range(0, len(text), max_length)]
+        
+        # Dividir el texto en secciones
+        secciones = []
+        start = 0
+        
+        for match in matches:
+            # Agregar la sección anterior
+            if match.start() > start:
+                seccion = text[start:match.start()].strip()
+                if seccion:
+                    secciones.append(seccion)
+            start = match.start()
+        
+        # Agregar la última sección
+        if start < len(text):
+            seccion = text[start:].strip()
+            if seccion:
+                secciones.append(seccion)
+        
+        return secciones
+        
+    except Exception as e:
+        logger.error(f"Error dividiendo texto en secciones: {str(e)}")
+        # Si hay error, dividir por longitud
+        max_length = 3000
+        return [text[i:i+max_length] for i in range(0, len(text), max_length)]
+
+def procesar_texto_largo(text: str, endpoint_name: str, model_name: str) -> Optional[Dict]:
+    """
+    Procesa un texto largo dividiéndolo en secciones y combinando los resultados.
+    """
+    try:
+        # Dividir el texto en secciones
+        secciones = dividir_texto_por_secciones(text)
+        logger.info(f"Texto dividido en {len(secciones)} secciones")
+        
+        resultados = []
+        
+        # Procesar cada sección
+        for i, seccion in enumerate(secciones, 1):
+            logger.info(f"Procesando sección {i}/{len(secciones)}")
+            
+            # Invocar modelo para la sección
+            resultado = invoke_llama_model(seccion, endpoint_name, model_name)
+            
+            if resultado is None:
+                logger.error(f"Error procesando sección {i}")
+                continue
+                
+            # Validar estructura
+            if not validate_structure(resultado):
+                logger.error(f"Estructura inválida en sección {i}")
+                continue
+                
+            resultados.append(resultado)
+        
+        if not resultados:
+            logger.error("No se pudo procesar ninguna sección correctamente")
+            return None
+            
+        # Combinar resultados
+        resultado_final = combinar_resultados(resultados)
+        return resultado_final
+        
+    except Exception as e:
+        logger.error(f"Error procesando texto largo: {str(e)}")
+        return None
+
+def combinar_resultados(resultados: List[Dict]) -> Dict:
+    """
+    Combina los resultados de múltiples secciones en un solo resultado.
+    """
+    try:
+        # Tomar el primer resultado como base
+        resultado_final = resultados[0].copy()
+        
+        # Combinar capítulos y artículos
+        if 'estructura' in resultado_final:
+            for resultado in resultados[1:]:
+                if 'estructura' in resultado:
+                    resultado_final['estructura']['capitulos'].extend(
+                        resultado['estructura']['capitulos']
+                    )
+        
+        # Combinar tags
+        if 'tags' in resultado_final:
+            tags_unicos = set(resultado_final['tags'])
+            for resultado in resultados[1:]:
+                if 'tags' in resultado:
+                    tags_unicos.update(resultado['tags'])
+            resultado_final['tags'] = list(tags_unicos)
+        
+        return resultado_final
+        
+    except Exception as e:
+        logger.error(f"Error combinando resultados: {str(e)}")
+        return resultados[0]  # Retornar el primer resultado si hay error
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--input-dir', required=True, help='Directorio con PDFs a procesar')
@@ -491,8 +613,12 @@ def main():
             # Limpiar texto
             text = clean_text(text)
             
-            # Invocar modelo
-            result = invoke_llama_model(text, args.endpoint, args.model)
+            # Verificar longitud del texto
+            if len(text) > 3000:  # Si el texto es muy largo
+                logger.info(f"Texto demasiado largo ({len(text)} caracteres). Procesando por secciones...")
+                result = procesar_texto_largo(text, args.endpoint, args.model)
+            else:
+                result = invoke_llama_model(text, args.endpoint, args.model)
             
             # Verificar si hubo error en la invocación
             if result is None:
