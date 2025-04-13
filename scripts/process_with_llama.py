@@ -225,105 +225,65 @@ def invoke_llama_model(text: str, endpoint_name: str, model_name: str, pdf_count
         # Generar el prompt
         prompt = generate_prompt(text, "")
         
-        # Intentar diferentes formatos de payload
-        payload_formats = [
-            {
-                "inputs": prompt,
-                "parameters": {
-                    "max_new_tokens": 2048,
-                    "temperature": 0.3,
-                    "top_p": 0.9,
-                    "do_sample": True,
-                    "repetition_penalty": 1.2,
-                    "model_name": model_name
-                }
-            },
-            {
-                "inputs": prompt,
-                "parameters": {
-                    "max_new_tokens": 2048,
-                    "temperature": 0.3,
-                    "top_p": 0.9,
-                    "do_sample": True,
-                    "repetition_penalty": 1.2
-                },
-                "model_name": model_name
-            },
-            {
-                "inputs": prompt,
-                "model_name": model_name,
-                "parameters": {
-                    "max_new_tokens": 2048,
-                    "temperature": 0.3,
-                    "top_p": 0.9,
-                    "do_sample": True,
-                    "repetition_penalty": 1.2
-                }
+        # Formato correcto del payload según la documentación de SageMaker
+        payload = {
+            "inputs": [[
+                {"role": "system", "content": "Eres un asistente legal que analiza documentos legales."},
+                {"role": "user", "content": prompt}
+            ]],
+            "model_name": model_name,  # En la raíz del payload
+            "parameters": {
+                "max_new_tokens": 2048,
+                "temperature": 0.3,
+                "top_p": 0.9,
+                "do_sample": True,
+                "repetition_penalty": 1.2
             }
-        ]
+        }
         
-        last_error = None
-        for i, payload in enumerate(payload_formats, 1):
+        if pdf_count <= 15:
+            logger.info("=== Detalles del Payload ===")
+            logger.info(f"Payload completo: {json.dumps(payload, indent=2)}")
+            logger.info(f"Configuración de parámetros: {json.dumps(payload['parameters'], indent=2)}")
+            logger.info(f"Model name en payload: {payload['model_name']}")
+            logger.info("=== Fin Detalles del Payload ===")
+        
+        # Invocar endpoint sin CustomAttributes
+        if pdf_count <= 15:
+            logger.info(f"Invocando endpoint con payload de {len(json.dumps(payload))} bytes")
+        
+        response = sagemaker_runtime.invoke_endpoint(
+            EndpointName=endpoint_name,
+            ContentType='application/json',
+            Body=json.dumps(payload)
+        )
+        
+        if pdf_count <= 15:
+            logger.info("=== Detalles de la Respuesta ===")
+            logger.info(f"Status Code: {response['ResponseMetadata']['HTTPStatusCode']}")
+            logger.info(f"Headers: {response['ResponseMetadata']['HTTPHeaders']}")
+        
+        response_body = json.loads(response['Body'].read().decode('utf-8'))
+        
+        if pdf_count <= 15:
+            logger.info(f"Response Body: {json.dumps(response_body, indent=2)}")
+            logger.info("=== Fin Detalles de la Respuesta ===")
+        
+        if isinstance(response_body, list) and len(response_body) > 0:
+            generated_text = response_body[0].get('generated_text', '')
             if pdf_count <= 15:
-                logger.info(f"=== Intento {i} con formato de payload ===")
-                logger.info(f"Payload completo: {json.dumps(payload, indent=2)}")
-                logger.info(f"Configuración de parámetros: {json.dumps(payload.get('parameters', {}), indent=2)}")
-                logger.info(f"Model name en payload: {payload.get('model_name')}")
-                logger.info(f"Model name en parameters: {payload.get('parameters', {}).get('model_name')}")
+                logger.info(f"Texto generado extraído de lista de respuestas: {len(generated_text)} caracteres")
+        elif isinstance(response_body, dict):
+            generated_text = response_body.get('generated_text', '')
+            if pdf_count <= 15:
+                logger.info(f"Texto generado extraído de diccionario de respuesta: {len(generated_text)} caracteres")
+        else:
+            if pdf_count <= 15:
+                logger.error(f"Formato de respuesta inesperado: {type(response_body)}")
+                logger.error(f"Contenido de la respuesta: {response_body}")
+            return None
             
-            try:
-                response = sagemaker_runtime.invoke_endpoint(
-                    EndpointName=endpoint_name,
-                    ContentType='application/json',
-                    Body=json.dumps(payload)
-                )
-                
-                if pdf_count <= 15:
-                    logger.info("=== Detalles de la Respuesta ===")
-                    logger.info(f"Status Code: {response['ResponseMetadata']['HTTPStatusCode']}")
-                    logger.info(f"Headers: {response['ResponseMetadata']['HTTPHeaders']}")
-                
-                response_body = json.loads(response['Body'].read().decode('utf-8'))
-                
-                if pdf_count <= 15:
-                    logger.info(f"Response Body: {json.dumps(response_body, indent=2)}")
-                    logger.info("=== Fin Detalles de la Respuesta ===")
-                
-                if isinstance(response_body, list) and len(response_body) > 0:
-                    generated_text = response_body[0].get('generated_text', '')
-                    if pdf_count <= 15:
-                        logger.info(f"Texto generado extraído de lista de respuestas: {len(generated_text)} caracteres")
-                elif isinstance(response_body, dict):
-                    generated_text = response_body.get('generated_text', '')
-                    if pdf_count <= 15:
-                        logger.info(f"Texto generado extraído de diccionario de respuesta: {len(generated_text)} caracteres")
-                else:
-                    if pdf_count <= 15:
-                        logger.error(f"Formato de respuesta inesperado: {type(response_body)}")
-                        logger.error(f"Contenido de la respuesta: {response_body}")
-                    continue
-                    
-                return generated_text
-                
-            except Exception as e:
-                last_error = e
-                if pdf_count <= 15:
-                    logger.error(f"=== Error en intento {i} ===")
-                    logger.error(f"Tipo de error: {type(e).__name__}")
-                    logger.error(f"Mensaje de error: {str(e)}")
-                    logger.error(f"Endpoint: {endpoint_name}")
-                    logger.error(f"Modelo: {model_name}")
-                    logger.error(f"Región: {region}")
-                    logger.error(f"Payload usado: {json.dumps(payload, indent=2)}")
-                    logger.error("=== Fin Error ===")
-                continue
-        
-        # Si llegamos aquí, todos los intentos fallaron
-        if pdf_count <= 15 and last_error:
-            logger.error("=== Error Final ===")
-            logger.error(f"Todos los formatos de payload fallaron. Último error: {str(last_error)}")
-            logger.error("=== Fin Error Final ===")
-        return None
+        return generated_text
             
     except Exception as e:
         if pdf_count <= 15:
