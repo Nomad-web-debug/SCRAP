@@ -200,41 +200,62 @@ Texto a analizar:
 Genera una respuesta JSON válida que siga exactamente el formato especificado, manteniendo la precisión donde se requiere.
 </response>"""
 
-def invoke_model(text: str, endpoint_name: str, model_name: str) -> Dict:
+def invoke_llama_model(text: str, endpoint_name: str, model_name: str) -> Optional[str]:
     """
-    Invoca el modelo Llama-2 en SageMaker
+    Invoca el modelo Llama 2 en SageMaker para procesar el texto
+    
+    Args:
+        text (str): Texto a procesar
+        endpoint_name (str): Nombre del endpoint de SageMaker
+        model_name (str): Nombre del modelo a usar (ej: 'llama-2-7b-chat')
+        
+    Returns:
+        Optional[str]: Texto generado por el modelo o None si hay error
     """
     try:
-        runtime = boto3.client('sagemaker-runtime')
+        region = os.environ.get('AWS_REGION', 'us-east-1')
+        logger.info(f"Iniciando invocación del modelo en región {region}")
+        
+        sagemaker_runtime = boto3.client('sagemaker-runtime', region_name=region)
         
         # Generar el prompt
         prompt = generate_prompt(text, "")
         
+        # Formato de chat para Llama 2 con parámetros ajustados
         payload = {
             "inputs": prompt,
             "parameters": {
+                "model_name": model_name,
                 "max_new_tokens": 2048,
-                "temperature": 0.1,
+                "temperature": 0.3,  # Reducido para mayor precisión
                 "top_p": 0.9,
-                "model_name": model_name
+                "do_sample": True,
+                "repetition_penalty": 1.2  # Añadido para evitar repeticiones
             }
         }
         
-        logger.info(f"Invocando endpoint {endpoint_name} con modelo {model_name}")
-        logger.info(f"Configuración del payload: {json.dumps(payload['parameters'], indent=2)}")
-        
-        response = runtime.invoke_endpoint(
+        # Invocar endpoint
+        response = sagemaker_runtime.invoke_endpoint(
             EndpointName=endpoint_name,
             ContentType='application/json',
             Body=json.dumps(payload)
         )
         
-        result = json.loads(response['Body'].read().decode())
-        return result
+        response_body = json.loads(response['Body'].read().decode('utf-8'))
         
+        if isinstance(response_body, list) and len(response_body) > 0:
+            generated_text = response_body[0].get('generated_text', '')
+        elif isinstance(response_body, dict):
+            generated_text = response_body.get('generated_text', '')
+        else:
+            logger.error(f"Formato de respuesta inesperado")
+            return None
+            
+        return generated_text
+            
     except Exception as e:
-        logger.error(f"Error invocando el modelo: {str(e)}")
-        raise
+        logger.error(f"Error invocando el modelo Llama: {str(e)}")
+        return None
 
 def validate_structure(data: Dict) -> bool:
     """
@@ -487,7 +508,7 @@ def procesar_texto_largo(text: str, endpoint_name: str, model_name: str) -> Opti
             logger.info(f"Procesando sección {i}/{len(secciones)}")
             
             # Invocar modelo para la sección
-            resultado = invoke_model(seccion, endpoint_name, model_name)
+            resultado = invoke_llama_model(seccion, endpoint_name, model_name)
             
             if resultado is None:
                 logger.error(f"Error procesando sección {i}")
@@ -555,11 +576,20 @@ def main():
     
     # Lista de resultados para el CSV
     results = []
+    pdf_count = 0
+    success_count = 0
+    error_count = 0
     
     # Procesar cada PDF
     for pdf_file in glob.glob(os.path.join(args.input_dir, '*.pdf')):
+        pdf_count += 1
         filename = os.path.basename(pdf_file)
-        logging.info(f'Procesando {filename}...')
+        
+        if pdf_count <= 15:
+            logging.info(f'Procesando {filename}...')
+        else:
+            if pdf_count % 10 == 0:  # Mostrar resumen cada 10 PDFs
+                logging.info(f'Procesados {pdf_count} PDFs: {success_count} exitosos, {error_count} errores')
         
         try:
             # Extraer texto del PDF
@@ -570,21 +600,28 @@ def main():
             
             # Verificar longitud del texto
             if len(text) > 3000:  # Si el texto es muy largo
-                logger.info(f"Texto demasiado largo ({len(text)} caracteres). Procesando por secciones...")
+                if pdf_count <= 15:
+                    logger.info(f"Texto demasiado largo ({len(text)} caracteres). Procesando por secciones...")
                 result = procesar_texto_largo(text, args.endpoint, args.model)
             else:
-                result = invoke_model(text, args.endpoint, args.model)
+                result = invoke_llama_model(text, args.endpoint, args.model)
             
             # Verificar si hubo error en la invocación
             if result is None:
-                logging.error(f'Error en la respuesta del modelo para {filename}')
+                error_count += 1
+                if pdf_count <= 15:
+                    logging.error(f'Error en la respuesta del modelo para {filename}')
                 continue
                 
             # Validar estructura
             if not validate_structure(result):
-                logging.error(f'Estructura inválida en respuesta para {filename}')
+                error_count += 1
+                if pdf_count <= 15:
+                    logging.error(f'Estructura inválida en respuesta para {filename}')
                 continue
                 
+            success_count += 1
+            
             # Guardar JSON individual
             output_json = os.path.join(args.output_dir, f'{os.path.splitext(filename)[0]}.json')
             with open(output_json, 'w', encoding='utf-8') as f:
@@ -599,8 +636,13 @@ def main():
             })
             
         except Exception as e:
-            logging.error(f'Error procesando {filename}: {str(e)}')
+            error_count += 1
+            if pdf_count <= 15:
+                logging.error(f'Error procesando {filename}: {str(e)}')
             continue
+    
+    # Mostrar resumen final
+    logging.info(f'Procesamiento completado: {pdf_count} PDFs totales, {success_count} exitosos, {error_count} errores')
     
     # Guardar CSV con todos los resultados
     if results:
