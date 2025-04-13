@@ -219,28 +219,36 @@ def invoke_llama_model(text: str, endpoint_name: str, model_name: str) -> Option
         sagemaker_runtime = boto3.client('sagemaker-runtime', region_name=region)
         logger.info(f"Cliente SageMaker inicializado para endpoint: {endpoint_name}")
         
-        # Generar el prompt
-        prompt = generate_prompt(text, model_name)
+        # Generar el prompt con el nombre del archivo
+        filename = os.path.basename(endpoint_name).replace('llama-2-', '').replace('-endpoint', '')
+        prompt = generate_prompt(text, filename)
         
-        # Formato de invocación directo
+        # Formato de payload para SageMaker
         payload = {
-            "text_inputs": prompt,
-            "max_length": 2048,
+            "model_name": model_name,
+            "prompt": prompt,
+            "max_tokens": 2048,
             "temperature": 0.7,
-            "model": model_name
+            "top_p": 0.9,
+            "stop": ["</response>"]
         }
         
         logger.info(f"Invocando endpoint {endpoint_name} con modelo {model_name}")
         
         # Crear versión truncada para logs
         log_payload = payload.copy()
-        if len(log_payload.get("text_inputs", "")) > 100:
-            log_payload["text_inputs"] = log_payload["text_inputs"][:100] + "... (texto truncado)"
+        if len(log_payload.get("prompt", "")) > 100:
+            log_payload["prompt"] = log_payload["prompt"][:100] + "... (texto truncado)"
         logger.debug(f"Payload a enviar (truncado): {json.dumps(log_payload, indent=2)}")
         
+        # Agregar headers específicos
         response = sagemaker_runtime.invoke_endpoint(
             EndpointName=endpoint_name,
             ContentType='application/json',
+            CustomAttributes=json.dumps({
+                "model_name": model_name,
+                "format": "json"
+            }),
             Body=json.dumps(payload)
         )
         
