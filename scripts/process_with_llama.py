@@ -242,19 +242,10 @@ def invoke_llama_model(text: str, endpoint_name: str, model_name: str) -> Option
             log_payload["inputs"] = log_payload["inputs"][:100] + "... (texto truncado)"
         logger.info(f"Payload a enviar (truncado): {json.dumps(log_payload, indent=2)}")
         
-        # Configurar atributos personalizados
-        custom_attributes = {
-            "model_name": model_name,
-            "endpoint": endpoint_name,
-            "region": region
-        }
-        logger.info(f"Atributos personalizados: {json.dumps(custom_attributes, indent=2)}")
-        
-        # Agregar headers específicos
+        # Invocar endpoint sin CustomAttributes
         response = sagemaker_runtime.invoke_endpoint(
             EndpointName=endpoint_name,
             ContentType='application/json',
-            CustomAttributes=json.dumps(custom_attributes),
             Body=json.dumps(payload)
         )
         
@@ -287,8 +278,6 @@ def invoke_llama_model(text: str, endpoint_name: str, model_name: str) -> Option
         logger.error(f"  - Región: {region}")
         if 'log_payload' in locals():
             logger.error(f"  - Payload enviado (truncado): {json.dumps(log_payload, indent=2)}")
-        if 'custom_attributes' in locals():
-            logger.error(f"  - Atributos personalizados: {json.dumps(custom_attributes, indent=2)}")
         return None
 
 def validate_structure(data: Dict) -> bool:
