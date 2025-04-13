@@ -363,7 +363,7 @@ def create_sagemaker_endpoint(config: Dict[str, Any], region: str) -> Tuple[str,
         
         # Crear nombre único para el modelo y endpoint
         timestamp = datetime.now().strftime('%Y-%m-%d-%H-%M-%S')
-        model_name = f"{config['nombre_modelo']}-{timestamp}"
+        model_name = f"{config['nombre']}-{timestamp}"
         endpoint_config_name = f"{model_name}-config"
         endpoint_name = f"{model_name}-endpoint"
         
@@ -404,8 +404,8 @@ def create_sagemaker_endpoint(config: Dict[str, Any], region: str) -> Tuple[str,
                 {
                     'VariantName': 'AllTraffic',
                     'ModelName': model_name,
-                    'InstanceType': config['tipo_instancia'],
-                    'InitialInstanceCount': config['num_instancias']
+                    'InstanceType': config['instancia'],
+                    'InitialInstanceCount': 1
                 }
             ]
         )
