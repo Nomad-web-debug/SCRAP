@@ -344,6 +344,19 @@ def check_service_limits(sagemaker):
         logger.error(f"Error verificando límites de servicio: {str(e)}")
         return [], []
 
+def get_container_image(region: str) -> str:
+    """
+    Retorna la imagen oficial de AWS para SageMaker JumpStart con soporte para Llama 2
+    
+    Args:
+        region (str): Región de AWS donde se desplegará el endpoint
+        
+    Returns:
+        str: URI de la imagen del container en ECR
+    """
+    account_id = "763104351884"  # Cuenta oficial de AWS Deep Learning Containers
+    return f"{account_id}.dkr.ecr.{region}.amazonaws.com/djl-inference:0.21.0-deepspeed0.8.3-cu117"
+
 def create_sagemaker_endpoint(config: Dict[str, Any], region: str) -> Tuple[str, str]:
     """
     Crea un endpoint de SageMaker para el modelo especificado
