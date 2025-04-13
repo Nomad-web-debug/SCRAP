@@ -505,6 +505,11 @@ def main():
             # Invocar modelo
             result = invoke_llama_model(text, args.endpoint, args.model)
             
+            # Verificar si hubo error en la invocación
+            if result is None:
+                logging.error(f'Error en la respuesta del modelo para {filename}')
+                continue
+                
             # Validar estructura
             if not validate_structure(result):
                 logging.error(f'Estructura inválida en respuesta para {filename}')
