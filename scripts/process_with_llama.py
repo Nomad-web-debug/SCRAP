@@ -149,7 +149,7 @@ def generate_prompt(text: str, filename: str) -> str:
     """
     Genera el prompt para el modelo Llama-2
     """
-    return f"""Analiza el siguiente texto legal del archivo {filename}. Tu tarea es extraer e interpretar información específica manteniendo la precisión del texto original donde sea necesario.
+    return f"""Analiza el siguiente texto legal. Tu tarea es extraer e interpretar información específica manteniendo la precisión del texto original donde sea necesario.
 
 IMPORTANTE - Reglas de extracción:
 1. CAMPOS QUE DEBEN SER EXACTOS (copiar tal cual del texto):
@@ -219,55 +219,61 @@ def invoke_llama_model(text: str, endpoint_name: str, model_name: str) -> Option
         sagemaker_runtime = boto3.client('sagemaker-runtime', region_name=region)
         logger.info(f"Cliente SageMaker inicializado para endpoint: {endpoint_name}")
         
-        # Generar el prompt con el nombre del archivo
-        filename = os.path.basename(endpoint_name).replace('llama-2-', '').replace('-endpoint', '')
-        prompt = generate_prompt(text, filename)
+        # Generar el prompt
+        prompt = generate_prompt(text, "")
         
         # Formato de chat para Llama 2
         payload = {
-            "model_name": model_name,
-            "inputs": [[{
-                "role": "user",
-                "content": prompt
-            }]],
+            "inputs": prompt,
             "parameters": {
                 "max_new_tokens": 2048,
                 "temperature": 0.7,
                 "top_p": 0.9,
-                "do_sample": True,
-                "model_name": model_name
+                "do_sample": True
             }
         }
         
         logger.info(f"Invocando endpoint {endpoint_name} con modelo {model_name}")
+        logger.info(f"Configuración del payload: {json.dumps(payload['parameters'], indent=2)}")
         
         # Crear versión truncada para logs
         log_payload = payload.copy()
-        if len(log_payload["inputs"][0][0]["content"]) > 100:
-            log_payload["inputs"][0][0]["content"] = log_payload["inputs"][0][0]["content"][:100] + "... (texto truncado)"
-        logger.debug(f"Payload a enviar (truncado): {json.dumps(log_payload, indent=2)}")
+        if len(log_payload["inputs"]) > 100:
+            log_payload["inputs"] = log_payload["inputs"][:100] + "... (texto truncado)"
+        logger.info(f"Payload a enviar (truncado): {json.dumps(log_payload, indent=2)}")
+        
+        # Configurar atributos personalizados
+        custom_attributes = {
+            "model_name": model_name,
+            "endpoint": endpoint_name,
+            "region": region
+        }
+        logger.info(f"Atributos personalizados: {json.dumps(custom_attributes, indent=2)}")
         
         # Agregar headers específicos
         response = sagemaker_runtime.invoke_endpoint(
             EndpointName=endpoint_name,
             ContentType='application/json',
-            CustomAttributes=json.dumps({
-                "model_name": model_name
-            }),
+            CustomAttributes=json.dumps(custom_attributes),
             Body=json.dumps(payload)
         )
         
+        logger.info("Respuesta recibida del endpoint")
+        logger.info(f"Headers de respuesta: {response['ResponseMetadata']}")
+        
         response_body = json.loads(response['Body'].read().decode('utf-8'))
-        logger.debug(f"Respuesta recibida: {json.dumps(response_body, indent=2)}")
+        logger.info(f"Cuerpo de la respuesta: {json.dumps(response_body, indent=2)}")
         
         if isinstance(response_body, list) and len(response_body) > 0:
             generated_text = response_body[0].get('generated_text', '')
             logger.info("Texto generado extraído de lista de respuestas")
+            logger.info(f"Longitud del texto generado: {len(generated_text)} caracteres")
         elif isinstance(response_body, dict):
             generated_text = response_body.get('generated_text', '')
             logger.info("Texto generado extraído de diccionario de respuesta")
+            logger.info(f"Longitud del texto generado: {len(generated_text)} caracteres")
         else:
-            logger.error(f"Formato de respuesta inesperado: {response_body}")
+            logger.error(f"Formato de respuesta inesperado: {json.dumps(response_body, indent=2)}")
             return None
             
         logger.info("Invocación del modelo completada exitosamente")
@@ -275,10 +281,14 @@ def invoke_llama_model(text: str, endpoint_name: str, model_name: str) -> Option
             
     except Exception as e:
         logger.error(f"Error invocando el modelo Llama: {str(e)}")
+        logger.error(f"Detalles del error:")
+        logger.error(f"  - Endpoint: {endpoint_name}")
+        logger.error(f"  - Modelo: {model_name}")
+        logger.error(f"  - Región: {region}")
         if 'log_payload' in locals():
-            logger.error(f"Payload enviado (truncado): {json.dumps(log_payload, indent=2)}")
-        logger.error(f"Endpoint: {endpoint_name}")
-        logger.error(f"Modelo: {model_name}")
+            logger.error(f"  - Payload enviado (truncado): {json.dumps(log_payload, indent=2)}")
+        if 'custom_attributes' in locals():
+            logger.error(f"  - Atributos personalizados: {json.dumps(custom_attributes, indent=2)}")
         return None
 
 def validate_structure(data: Dict) -> bool:
