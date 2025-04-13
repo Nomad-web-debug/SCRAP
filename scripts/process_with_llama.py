@@ -225,6 +225,7 @@ def invoke_llama_model(text: str, endpoint_name: str, model_name: str) -> Option
         
         # Formato de chat para Llama 2
         payload = {
+            "model_name": model_name,
             "inputs": [[{
                 "role": "user",
                 "content": prompt
@@ -249,9 +250,6 @@ def invoke_llama_model(text: str, endpoint_name: str, model_name: str) -> Option
         response = sagemaker_runtime.invoke_endpoint(
             EndpointName=endpoint_name,
             ContentType='application/json',
-            CustomAttributes=json.dumps({
-                "model_name": model_name
-            }),
             Body=json.dumps(payload)
         )
         
