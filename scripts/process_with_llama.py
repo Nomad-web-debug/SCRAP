@@ -225,13 +225,14 @@ def invoke_llama_model(text: str, endpoint_name: str, model_name: str, pdf_count
         # Generar el prompt
         prompt = generate_prompt(text, "")
         
-        # Formato correcto del payload según la documentación de SageMaker
+        # Formato correcto del payload para endpoints base de Llama 2
         payload = {
             "inputs": [[
                 {"role": "system", "content": "Eres un asistente legal que analiza documentos legales."},
                 {"role": "user", "content": prompt}
             ]],
             "parameters": {
+                "model_name": model_name,  # En parameters para endpoints base
                 "max_new_tokens": 2048,
                 "temperature": 0.3,
                 "top_p": 0.9,
@@ -244,18 +245,17 @@ def invoke_llama_model(text: str, endpoint_name: str, model_name: str, pdf_count
             logger.info("=== Detalles del Payload ===")
             logger.info(f"Payload completo: {json.dumps(payload, indent=2)}")
             logger.info(f"Configuración de parámetros: {json.dumps(payload['parameters'], indent=2)}")
-            logger.info(f"Model name en CustomAttributes: {model_name}")
+            logger.info(f"Model name en parameters: {payload['parameters']['model_name']}")
             logger.info("=== Fin Detalles del Payload ===")
         
-        # Invocar endpoint con CustomAttributes para el model_name
+        # Invocar endpoint sin CustomAttributes
         if pdf_count <= 15:
             logger.info(f"Invocando endpoint con payload de {len(json.dumps(payload))} bytes")
         
         response = sagemaker_runtime.invoke_endpoint(
             EndpointName=endpoint_name,
             ContentType='application/json',
-            Body=json.dumps(payload),
-            CustomAttributes=f"model_name={model_name}"
+            Body=json.dumps(payload)
         )
         
         if pdf_count <= 15:
