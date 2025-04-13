@@ -225,7 +225,7 @@ def invoke_llama_model(text: str, endpoint_name: str, model_name: str, pdf_count
         # Generar el prompt
         prompt = generate_prompt(text, "")
         
-        # Formato correcto del payload para endpoints de SageMaker
+        # Formato correcto del payload para SageMaker
         payload = {
             "inputs": [[
                 {"role": "system", "content": "Eres un asistente legal que analiza documentos legales."},
