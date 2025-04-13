@@ -225,15 +225,17 @@ def invoke_llama_model(text: str, endpoint_name: str, model_name: str, pdf_count
         # Generar el prompt
         prompt = generate_prompt(text, "")
         
-        # Formato del payload para containers oficiales de SageMaker
+        # Formato del payload para containers oficiales de SageMaker JumpStart
+        # IMPORTANTE: El model_name NO debe ir en parameters, solo en CustomAttributes
+        # parameters solo debe contener parámetros de generación que entiende el modelo
         payload = {
             "inputs": [[
                 {"role": "system", "content": "Eres un asistente legal que analiza documentos legales."},
                 {"role": "user", "content": prompt}
             ]],
             "parameters": {
-                "max_new_tokens": 2048,
-                "temperature": 0.3,
+                "max_new_tokens": 2048,  # Parámetros de generación
+                "temperature": 0.3,      # que entiende el modelo
                 "top_p": 0.9,
                 "do_sample": True,
                 "repetition_penalty": 1.2
@@ -248,6 +250,8 @@ def invoke_llama_model(text: str, endpoint_name: str, model_name: str, pdf_count
             logger.info("=== Fin Detalles del Payload ===")
         
         # Invocar endpoint con CustomAttributes para el model_name
+        # IMPORTANTE: Para containers oficiales de SageMaker JumpStart,
+        # el model_name debe ir exclusivamente en CustomAttributes
         if pdf_count <= 15:
             logger.info(f"Invocando endpoint con payload de {len(json.dumps(payload))} bytes")
         
@@ -255,7 +259,7 @@ def invoke_llama_model(text: str, endpoint_name: str, model_name: str, pdf_count
             EndpointName=endpoint_name,
             ContentType='application/json',
             Body=json.dumps(payload),
-            CustomAttributes=f"model_name={model_name}"
+            CustomAttributes=f"model_name={model_name}"  # Metadata HTTP para SageMaker JumpStart
         )
         
         if pdf_count <= 15:
