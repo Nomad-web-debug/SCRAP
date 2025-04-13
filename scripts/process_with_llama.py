@@ -200,7 +200,7 @@ Texto a analizar:
 Genera una respuesta JSON válida que siga exactamente el formato especificado, manteniendo la precisión donde se requiere.
 </response>"""
 
-def invoke_model(text: str, endpoint_name: str) -> Dict:
+def invoke_model(text: str, endpoint_name: str, model_name: str) -> Dict:
     """
     Invoca el modelo Llama-2 en SageMaker
     """
@@ -212,15 +212,15 @@ def invoke_model(text: str, endpoint_name: str) -> Dict:
             "parameters": {
                 "max_new_tokens": 2048,
                 "temperature": 0.1,
-                "top_p": 0.9,
-                "model_name": "llama-2-7b-chat"  # Agregamos el nombre del modelo
+                "top_p": 0.9
             }
         }
         
         response = runtime.invoke_endpoint(
             EndpointName=endpoint_name,
             ContentType='application/json',
-            Body=json.dumps(payload)
+            Body=json.dumps(payload),
+            CustomAttributes=json.dumps({"model_name": model_name})
         )
         
         result = json.loads(response['Body'].read().decode())
@@ -481,7 +481,7 @@ def procesar_texto_largo(text: str, endpoint_name: str, model_name: str) -> Opti
             logger.info(f"Procesando sección {i}/{len(secciones)}")
             
             # Invocar modelo para la sección
-            resultado = invoke_model(seccion, endpoint_name)
+            resultado = invoke_model(seccion, endpoint_name, model_name)
             
             if resultado is None:
                 logger.error(f"Error procesando sección {i}")
@@ -567,7 +567,7 @@ def main():
                 logger.info(f"Texto demasiado largo ({len(text)} caracteres). Procesando por secciones...")
                 result = procesar_texto_largo(text, args.endpoint, args.model)
             else:
-                result = invoke_model(text, args.endpoint)
+                result = invoke_model(text, args.endpoint, args.model)
             
             # Verificar si hubo error en la invocación
             if result is None:
