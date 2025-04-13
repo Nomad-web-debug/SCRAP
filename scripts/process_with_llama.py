@@ -200,7 +200,7 @@ Texto a analizar:
 Genera una respuesta JSON válida que siga exactamente el formato especificado, manteniendo la precisión donde se requiere.
 </response>"""
 
-def invoke_llama_model(text: str, endpoint_name: str, model_name: str) -> Optional[str]:
+def invoke_llama_model(text: str, endpoint_name: str, model_name: str, pdf_count: int) -> Optional[str]:
     """
     Invoca el modelo Llama 2 en SageMaker para procesar el texto
     
@@ -208,13 +208,17 @@ def invoke_llama_model(text: str, endpoint_name: str, model_name: str) -> Option
         text (str): Texto a procesar
         endpoint_name (str): Nombre del endpoint de SageMaker
         model_name (str): Nombre del modelo a usar (ej: 'llama-2-7b-chat')
+        pdf_count (int): Número del PDF actual para control de logs
         
     Returns:
         Optional[str]: Texto generado por el modelo o None si hay error
     """
     try:
         region = os.environ.get('AWS_REGION', 'us-east-1')
-        logger.info(f"Iniciando invocación del modelo en región {region}")
+        if pdf_count <= 15:
+            logger.info(f"Iniciando invocación del modelo en región {region}")
+            logger.info(f"Endpoint: {endpoint_name}")
+            logger.info(f"Modelo: {model_name}")
         
         sagemaker_runtime = boto3.client('sagemaker-runtime', region_name=region)
         
@@ -225,36 +229,68 @@ def invoke_llama_model(text: str, endpoint_name: str, model_name: str) -> Option
         payload = {
             "inputs": prompt,
             "parameters": {
-                "model_name": model_name,
                 "max_new_tokens": 2048,
                 "temperature": 0.3,  # Reducido para mayor precisión
                 "top_p": 0.9,
                 "do_sample": True,
                 "repetition_penalty": 1.2  # Añadido para evitar repeticiones
-            }
+            },
+            "model_name": model_name  # Mover model_name al nivel superior del payload
         }
         
+        if pdf_count <= 15:
+            logger.info("=== Detalles del Payload ===")
+            logger.info(f"Payload completo: {json.dumps(payload, indent=2)}")
+            logger.info(f"Configuración de parámetros: {json.dumps(payload['parameters'], indent=2)}")
+            logger.info(f"Model name en payload: {payload.get('model_name')}")
+            logger.info("=== Fin Detalles del Payload ===")
+        
         # Invocar endpoint
+        if pdf_count <= 15:
+            logger.info(f"Invocando endpoint con payload de {len(json.dumps(payload))} bytes")
+        
         response = sagemaker_runtime.invoke_endpoint(
             EndpointName=endpoint_name,
             ContentType='application/json',
             Body=json.dumps(payload)
         )
         
+        if pdf_count <= 15:
+            logger.info("=== Detalles de la Respuesta ===")
+            logger.info(f"Status Code: {response['ResponseMetadata']['HTTPStatusCode']}")
+            logger.info(f"Headers: {response['ResponseMetadata']['HTTPHeaders']}")
+        
         response_body = json.loads(response['Body'].read().decode('utf-8'))
+        
+        if pdf_count <= 15:
+            logger.info(f"Response Body: {json.dumps(response_body, indent=2)}")
+            logger.info("=== Fin Detalles de la Respuesta ===")
         
         if isinstance(response_body, list) and len(response_body) > 0:
             generated_text = response_body[0].get('generated_text', '')
+            if pdf_count <= 15:
+                logger.info(f"Texto generado extraído de lista de respuestas: {len(generated_text)} caracteres")
         elif isinstance(response_body, dict):
             generated_text = response_body.get('generated_text', '')
+            if pdf_count <= 15:
+                logger.info(f"Texto generado extraído de diccionario de respuesta: {len(generated_text)} caracteres")
         else:
-            logger.error(f"Formato de respuesta inesperado")
+            if pdf_count <= 15:
+                logger.error(f"Formato de respuesta inesperado: {type(response_body)}")
+                logger.error(f"Contenido de la respuesta: {response_body}")
             return None
             
         return generated_text
             
     except Exception as e:
-        logger.error(f"Error invocando el modelo Llama: {str(e)}")
+        if pdf_count <= 15:
+            logger.error("=== Error Detallado ===")
+            logger.error(f"Tipo de error: {type(e).__name__}")
+            logger.error(f"Mensaje de error: {str(e)}")
+            logger.error(f"Endpoint: {endpoint_name}")
+            logger.error(f"Modelo: {model_name}")
+            logger.error(f"Región: {region}")
+            logger.error("=== Fin Error Detallado ===")
         return None
 
 def validate_structure(data: Dict) -> bool:
@@ -492,37 +528,42 @@ def dividir_texto_por_secciones(text: str) -> List[str]:
         max_length = 3000
         return [text[i:i+max_length] for i in range(0, len(text), max_length)]
 
-def procesar_texto_largo(text: str, endpoint_name: str, model_name: str) -> Optional[Dict]:
+def procesar_texto_largo(text: str, endpoint_name: str, model_name: str, pdf_count: int) -> Optional[Dict]:
     """
     Procesa un texto largo dividiéndolo en secciones y combinando los resultados.
     """
     try:
         # Dividir el texto en secciones
         secciones = dividir_texto_por_secciones(text)
-        logger.info(f"Texto dividido en {len(secciones)} secciones")
+        if pdf_count <= 15:
+            logger.info(f"Texto dividido en {len(secciones)} secciones")
         
         resultados = []
         
         # Procesar cada sección
         for i, seccion in enumerate(secciones, 1):
-            logger.info(f"Procesando sección {i}/{len(secciones)}")
+            if pdf_count <= 15:
+                logger.info(f"Procesando sección {i}/{len(secciones)}")
             
             # Invocar modelo para la sección
-            resultado = invoke_llama_model(seccion, endpoint_name, model_name)
+            resultado = invoke_llama_model(seccion, endpoint_name, model_name, pdf_count)
             
             if resultado is None:
-                logger.error(f"Error procesando sección {i}")
+                if pdf_count <= 15:
+                    logger.error(f"Error procesando sección {i}")
                 continue
                 
             # Validar estructura
             if not validate_structure(resultado):
-                logger.error(f"Estructura inválida en sección {i}")
+                if pdf_count <= 15:
+                    logger.error(f"Estructura inválida en sección {i}")
                 continue
                 
             resultados.append(resultado)
         
         if not resultados:
-            logger.error("No se pudo procesar ninguna sección correctamente")
+            if pdf_count <= 15:
+                logger.error("No se pudo procesar ninguna sección correctamente")
             return None
             
         # Combinar resultados
@@ -530,7 +571,8 @@ def procesar_texto_largo(text: str, endpoint_name: str, model_name: str) -> Opti
         return resultado_final
         
     except Exception as e:
-        logger.error(f"Error procesando texto largo: {str(e)}")
+        if pdf_count <= 15:
+            logger.error(f"Error procesando texto largo: {str(e)}")
         return None
 
 def combinar_resultados(resultados: List[Dict]) -> Dict:
@@ -602,9 +644,9 @@ def main():
             if len(text) > 3000:  # Si el texto es muy largo
                 if pdf_count <= 15:
                     logger.info(f"Texto demasiado largo ({len(text)} caracteres). Procesando por secciones...")
-                result = procesar_texto_largo(text, args.endpoint, args.model)
+                result = procesar_texto_largo(text, args.endpoint, args.model, pdf_count)
             else:
-                result = invoke_llama_model(text, args.endpoint, args.model)
+                result = invoke_llama_model(text, args.endpoint, args.model, pdf_count)
             
             # Verificar si hubo error en la invocación
             if result is None:
