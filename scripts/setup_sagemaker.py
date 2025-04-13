@@ -6,6 +6,7 @@ import os
 from botocore.exceptions import ClientError
 import argparse
 from datetime import datetime
+from typing import Dict, Tuple
 
 # Configurar logging
 logging.basicConfig(
@@ -343,90 +344,37 @@ def check_service_limits(sagemaker):
         logger.error(f"Error verificando límites de servicio: {str(e)}")
         return [], []
 
-def create_sagemaker_endpoint(modelo_elegido='13b', force_recreate=False):
+def create_sagemaker_endpoint(config: Dict[str, Any], region: str) -> Tuple[str, str]:
     """
-    Crea un endpoint de SageMaker con el modelo Llama 2 especificado
+    Crea un endpoint de SageMaker para el modelo especificado
+    
+    Args:
+        config (Dict[str, Any]): Configuración del modelo y endpoint
+        region (str): Región de AWS
+        
+    Returns:
+        Tuple[str, str]: Nombre del endpoint y ARN del rol
     """
     try:
-        # Verificar que el token está configurado
-        hf_token = os.environ.get('HUGGINGFACE_HUB_TOKEN')
-        if not hf_token:
-            raise ValueError("HUGGINGFACE_HUB_TOKEN no está configurado. Por favor, configura la variable de entorno.")
-
-        # Obtener configuración del modelo
-        if modelo_elegido not in MODELO_CONFIG:
-            raise ValueError(f"Modelo no válido. Opciones disponibles: {', '.join(MODELO_CONFIG.keys())}")
+        sagemaker = boto3.client('sagemaker', region_name=region)
         
-        config = MODELO_CONFIG[modelo_elegido]
-        logger.info(f"Configurando modelo {config['nombre']} ({config['descripcion']})")
+        # Obtener ARN del rol
+        role_arn = get_or_create_role(boto3.client('iam'))
         
-        # Configurar región y servicios
-        region = os.environ.get('AWS_REGION', 'us-east-1')
-        session = boto3.Session(region_name=region)
-        sagemaker = session.client('sagemaker')
-        iam = session.client('iam')
-        
-        # Verificar estado actual de los recursos
-        logger.info("Verificando estado actual de los recursos...")
-        active_endpoints, active_models = check_service_limits(sagemaker)
-        
-        if active_endpoints:
-            logger.info("\nSe encontraron endpoints activos. Procediendo a eliminarlos...")
-        else:
-            logger.info("\nNo se encontraron endpoints activos.")
-        
-        # Obtener o crear rol
-        role_arn = get_or_create_role(iam)
-        
-        # Listar y eliminar todos los recursos existentes
-        logger.info("Verificando recursos existentes...")
-        resources = list_all_resources(sagemaker)
-        
-        # Eliminar todos los endpoints
-        for endpoint in resources['endpoints']:
-            logger.info(f"Eliminando endpoint: {endpoint}")
-            try:
-                sagemaker.delete_endpoint(EndpointName=endpoint)
-                waiter = sagemaker.get_waiter('endpoint_deleted')
-                waiter.wait(EndpointName=endpoint)
-                logger.info(f"Endpoint {endpoint} eliminado correctamente")
-            except Exception as e:
-                logger.error(f"Error eliminando endpoint {endpoint}: {str(e)}")
-        
-        # Eliminar todas las configuraciones
-        for config_name in resources['endpoint_configs']:
-            logger.info(f"Eliminando configuración: {config_name}")
-            try:
-                sagemaker.delete_endpoint_config(EndpointConfigName=config_name)
-                logger.info(f"Configuración {config_name} eliminada correctamente")
-            except Exception as e:
-                logger.error(f"Error eliminando configuración {config_name}: {str(e)}")
-        
-        # Eliminar todos los modelos
-        for model_name in resources['models']:
-            logger.info(f"Eliminando modelo: {model_name}")
-            try:
-                sagemaker.delete_model(ModelName=model_name)
-                logger.info(f"Modelo {model_name} eliminado correctamente")
-            except Exception as e:
-                logger.error(f"Error eliminando modelo {model_name}: {str(e)}")
-        
-        # Esperar a que todos los recursos se liberen
-        logger.info("Esperando a que AWS libere los recursos...")
-        time.sleep(60)  # Esperar 1 minuto para asegurar que los recursos se liberen
-
-        # Nombres de recursos
-        model_name = config['nombre']
+        # Crear nombre único para el modelo y endpoint
+        timestamp = datetime.now().strftime('%Y-%m-%d-%H-%M-%S')
+        model_name = f"{config['nombre_modelo']}-{timestamp}"
         endpoint_config_name = f"{model_name}-config"
         endpoint_name = f"{model_name}-endpoint"
-
-        # Crear modelo
-        logger.info(f"Creando modelo {model_name}...")
         
-        # Usar imagen oficial de AWS para SageMaker
-        account_id = "763104351884"  # AWS Deep Learning Container account
-        image_uri = f"{account_id}.dkr.ecr.{region}.amazonaws.com/djl-inference:0.21.0-deepspeed0.8.3-cu117"
+        # Obtener URI de la imagen del container
+        image_uri = get_container_image(region)
         
+        logger.info(f"Creando modelo SageMaker: {model_name}")
+        logger.info(f"Usando imagen: {image_uri}")
+        logger.info(f"Rol ARN: {role_arn}")
+        
+        # Crear el modelo en SageMaker con la configuración necesaria
         sagemaker.create_model(
             ModelName=model_name,
             ExecutionRoleArn=role_arn,
@@ -435,56 +383,64 @@ def create_sagemaker_endpoint(modelo_elegido='13b', force_recreate=False):
                 'Environment': {
                     'SAGEMAKER_CONTAINER_LOG_LEVEL': '20',
                     'SAGEMAKER_REGION': region,
+                    'HF_MODEL_ID': config['modelo_hf'],  # Variable requerida por containers JumpStart
                     'MODEL_LOADING_TIMEOUT': '3600',
                     'INFERENCE_TIMEOUT': '3600',
-                    'SERVING_MODE': 'PYTORCH',
-                    'PYTORCH_JIT': 'false',
-                    'MMS_DEFAULT_RESPONSE_TIMEOUT': '3600',
-                    'MAX_REQUEST_SIZE': '10485760',
-                    'SAGEMAKER_MODEL_SERVER_WORKERS': '1',
-                    'SAGEMAKER_MODEL_SERVER_TIMEOUT': '3600'
+                    'MAX_INPUT_LENGTH': '2048',
+                    'MAX_TOTAL_TOKENS': '4096',
+                    'HF_TASK': 'text-generation'
                 }
             }
         )
         
+        logger.info(f"Modelo creado: {model_name}")
+        
         # Crear configuración del endpoint
-        logger.info(f"Creando configuración del endpoint...")
+        logger.info(f"Creando configuración del endpoint: {endpoint_config_name}")
+        
         sagemaker.create_endpoint_config(
             EndpointConfigName=endpoint_config_name,
             ProductionVariants=[
                 {
                     'VariantName': 'AllTraffic',
                     'ModelName': model_name,
-                    'InstanceType': config['instancia'],
-                    'InitialInstanceCount': 1
+                    'InstanceType': config['tipo_instancia'],
+                    'InitialInstanceCount': config['num_instancias']
                 }
             ]
         )
         
-        # Crear endpoint
-        logger.info(f"Creando endpoint {endpoint_name}...")
+        logger.info(f"Configuración del endpoint creada: {endpoint_config_name}")
+        
+        # Crear el endpoint
+        logger.info(f"Creando endpoint: {endpoint_name}")
+        
         sagemaker.create_endpoint(
             EndpointName=endpoint_name,
             EndpointConfigName=endpoint_config_name
         )
         
+        logger.info(f"Endpoint creado: {endpoint_name}")
+        logger.info("Esperando a que el endpoint esté en servicio...")
+        
         # Esperar a que el endpoint esté listo
-        logger.info("Esperando a que el endpoint esté listo...")
         waiter = sagemaker.get_waiter('endpoint_in_service')
-        waiter.wait(EndpointName=endpoint_name)
+        waiter.wait(
+            EndpointName=endpoint_name,
+            WaiterConfig={'Delay': 30, 'MaxAttempts': 60}
+        )
         
-        logger.info(f"¡Endpoint {endpoint_name} creado y listo para usar!")
+        logger.info("¡Endpoint listo para usar!")
         
-        # Guardar estado del endpoint
-        save_endpoint_state(endpoint_name, modelo_elegido)
-        
-        return endpoint_name
+        return endpoint_name, role_arn
         
     except Exception as e:
-        logger.error(f"Error creando endpoint: {str(e)}")
-        if sagemaker and model_name:
-            logger.info("Limpiando recursos debido al error...")
-            cleanup_resources(sagemaker, model_name)
+        logger.error("=== Error al crear el endpoint ===")
+        logger.error(f"Tipo de error: {type(e).__name__}")
+        logger.error(f"Mensaje: {str(e)}")
+        logger.error(f"Región: {region}")
+        logger.error(f"Configuración: {json.dumps(config, indent=2)}")
+        logger.error("=== Fin del error ===")
         raise
 
 def test_endpoint(endpoint_name):
@@ -523,7 +479,7 @@ if __name__ == '__main__':
     args = parser.parse_args()
     
     try:
-        endpoint_name = create_sagemaker_endpoint(args.modelo, args.force)
+        endpoint_name, role_arn = create_sagemaker_endpoint(MODELO_CONFIG[args.modelo], os.environ.get('AWS_REGION', 'us-east-1'))
         if args.cleanup:
             logger.info("Limpiando recursos...")
             region = os.environ.get('AWS_REGION', 'us-east-1')
