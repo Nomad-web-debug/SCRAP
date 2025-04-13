@@ -190,48 +190,49 @@ def eliminar_endpoint_existente(sagemaker, endpoint_name):
         if e.response['Error']['Code'] != 'ValidationException':
             raise
 
-def cleanup_resources(sagemaker, model_name):
+def eliminar_recursos_asociados(sagemaker, model_name: str):
     """
-    Limpia todos los recursos asociados en caso de error
+    Elimina todos los recursos asociados a un modelo (endpoint, configuración y modelo)
     """
     try:
-        # Eliminar endpoint si existe
+        # Nombre de los recursos a eliminar
         endpoint_name = f"{model_name}-endpoint"
+        endpoint_config_name = f"{model_name}-config"
+        
+        # 1. Eliminar endpoint si existe
         try:
             logger.info(f"Eliminando endpoint {endpoint_name}...")
             sagemaker.delete_endpoint(EndpointName=endpoint_name)
-            waiter = sagemaker.get_waiter('endpoint_deleted')
-            waiter.wait(EndpointName=endpoint_name)
-            logger.info(f"Endpoint {endpoint_name} eliminado")
+            sagemaker.get_waiter('endpoint_deleted').wait(EndpointName=endpoint_name)
+            logger.info(f"Endpoint {endpoint_name} eliminado correctamente")
         except ClientError as e:
-            if e.response['Error']['Code'] != 'ResourceNotFoundException':
+            if e.response['Error']['Code'] != 'ValidationException':
                 logger.warning(f"Error eliminando endpoint: {str(e)}")
-
-        # Eliminar configuración del endpoint
-        config_name = f"{model_name}-config"
+        
+        # 2. Eliminar configuración del endpoint
         try:
-            logger.info(f"Eliminando configuración {config_name}...")
-            sagemaker.delete_endpoint_config(EndpointConfigName=config_name)
-            logger.info(f"Configuración {config_name} eliminada")
+            logger.info(f"Eliminando configuración {endpoint_config_name}...")
+            sagemaker.delete_endpoint_config(EndpointConfigName=endpoint_config_name)
+            logger.info(f"Configuración {endpoint_config_name} eliminada correctamente")
         except ClientError as e:
-            if e.response['Error']['Code'] != 'ResourceNotFoundException':
+            if e.response['Error']['Code'] != 'ValidationException':
                 logger.warning(f"Error eliminando configuración: {str(e)}")
-
-        # Eliminar modelo
+        
+        # 3. Eliminar modelo
         try:
             logger.info(f"Eliminando modelo {model_name}...")
             sagemaker.delete_model(ModelName=model_name)
-            logger.info(f"Modelo {model_name} eliminado")
+            logger.info(f"Modelo {model_name} eliminado correctamente")
         except ClientError as e:
-            if e.response['Error']['Code'] != 'ResourceNotFoundException':
+            if e.response['Error']['Code'] != 'ValidationException':
                 logger.warning(f"Error eliminando modelo: {str(e)}")
-
+        
         # Esperar un momento para asegurar que AWS ha liberado los recursos
         logger.info("Esperando a que AWS libere los recursos...")
         time.sleep(30)
-
+        
     except Exception as e:
-        logger.error(f"Error durante la limpieza: {str(e)}")
+        logger.error(f"Error durante la limpieza de recursos: {str(e)}")
 
 def save_endpoint_state(endpoint_name: str, modelo: str):
     """
@@ -380,6 +381,18 @@ def create_sagemaker_endpoint(config: Dict[str, Any], region: str) -> Tuple[str,
         endpoint_config_name = f"{model_name}-config"
         endpoint_name = f"{model_name}-endpoint"
         
+        # Verificar y eliminar recursos existentes
+        try:
+            # Listar todos los endpoints activos
+            response = sagemaker.list_endpoints()
+            for endpoint in response['Endpoints']:
+                if endpoint['EndpointStatus'] in ['InService', 'Creating', 'Updating']:
+                    # Extraer el nombre base del modelo del endpoint
+                    base_name = '-'.join(endpoint['EndpointName'].split('-')[:-1])
+                    eliminar_recursos_asociados(sagemaker, base_name)
+        except Exception as e:
+            logger.warning(f"Error al verificar endpoints existentes: {str(e)}")
+        
         # Obtener URI de la imagen del container
         image_uri = get_container_image(region)
         
@@ -498,7 +511,7 @@ if __name__ == '__main__':
             region = os.environ.get('AWS_REGION', 'us-east-1')
             session = boto3.Session(region_name=region)
             sagemaker = session.client('sagemaker')
-            cleanup_resources(sagemaker, MODELO_CONFIG[args.modelo]['nombre'])
+            eliminar_recursos_asociados(sagemaker, MODELO_CONFIG[args.modelo]['nombre'])
     except Exception as e:
         logger.error(f"Error: {str(e)}")
         exit(1) 
