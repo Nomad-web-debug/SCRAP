@@ -223,22 +223,23 @@ def invoke_llama_model(text: str, endpoint_name: str, model_name: str) -> Option
         filename = os.path.basename(endpoint_name).replace('llama-2-', '').replace('-endpoint', '')
         prompt = generate_prompt(text, filename)
         
-        # Formato de payload para SageMaker
+        # Formato de payload para SageMaker Llama 2
         payload = {
-            "model_name": model_name,
-            "prompt": prompt,
-            "max_tokens": 2048,
-            "temperature": 0.7,
-            "top_p": 0.9,
-            "stop": ["</response>"]
+            "inputs": prompt,
+            "parameters": {
+                "max_new_tokens": 2048,
+                "temperature": 0.7,
+                "top_p": 0.9,
+                "do_sample": True
+            }
         }
         
         logger.info(f"Invocando endpoint {endpoint_name} con modelo {model_name}")
         
         # Crear versión truncada para logs
         log_payload = payload.copy()
-        if len(log_payload.get("prompt", "")) > 100:
-            log_payload["prompt"] = log_payload["prompt"][:100] + "... (texto truncado)"
+        if len(log_payload.get("inputs", "")) > 100:
+            log_payload["inputs"] = log_payload["inputs"][:100] + "... (texto truncado)"
         logger.debug(f"Payload a enviar (truncado): {json.dumps(log_payload, indent=2)}")
         
         # Agregar headers específicos
@@ -246,8 +247,7 @@ def invoke_llama_model(text: str, endpoint_name: str, model_name: str) -> Option
             EndpointName=endpoint_name,
             ContentType='application/json',
             CustomAttributes=json.dumps({
-                "model_name": model_name,
-                "format": "json"
+                "model_name": model_name
             }),
             Body=json.dumps(payload)
         )
