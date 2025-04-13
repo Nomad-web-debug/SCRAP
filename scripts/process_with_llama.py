@@ -223,9 +223,12 @@ def invoke_llama_model(text: str, endpoint_name: str, model_name: str) -> Option
         filename = os.path.basename(endpoint_name).replace('llama-2-', '').replace('-endpoint', '')
         prompt = generate_prompt(text, filename)
         
-        # Formato de payload para SageMaker Llama 2
+        # Formato de chat para Llama 2
         payload = {
-            "inputs": prompt,
+            "inputs": [[{
+                "role": "user",
+                "content": prompt
+            }]],
             "parameters": {
                 "max_new_tokens": 2048,
                 "temperature": 0.7,
@@ -238,8 +241,8 @@ def invoke_llama_model(text: str, endpoint_name: str, model_name: str) -> Option
         
         # Crear versión truncada para logs
         log_payload = payload.copy()
-        if len(log_payload.get("inputs", "")) > 100:
-            log_payload["inputs"] = log_payload["inputs"][:100] + "... (texto truncado)"
+        if len(log_payload["inputs"][0][0]["content"]) > 100:
+            log_payload["inputs"][0][0]["content"] = log_payload["inputs"][0][0]["content"][:100] + "... (texto truncado)"
         logger.debug(f"Payload a enviar (truncado): {json.dumps(log_payload, indent=2)}")
         
         # Agregar headers específicos
