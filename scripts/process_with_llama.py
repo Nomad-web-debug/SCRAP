@@ -219,33 +219,28 @@ def invoke_llama_model(text: str, endpoint_name: str, model_name: str) -> Option
         sagemaker_runtime = boto3.client('sagemaker-runtime', region_name=region)
         logger.info(f"Cliente SageMaker inicializado para endpoint: {endpoint_name}")
         
-        # Formato estándar de SageMaker
+        # Generar el prompt
+        prompt = generate_prompt(text, model_name)
+        
+        # Formato de invocación directo
         payload = {
-            "inputs": [[{
-                "role": "user",
-                "content": text
-            }]],
-            "parameters": {
-                "max_new_tokens": 2048,
-                "temperature": 0.7,
-                "top_p": 0.9,
-                "do_sample": True
-            }
+            "text_inputs": prompt,
+            "max_length": 2048,
+            "temperature": 0.7,
+            "model": model_name
         }
         
         logger.info(f"Invocando endpoint {endpoint_name} con modelo {model_name}")
         
         # Crear versión truncada para logs
         log_payload = payload.copy()
-        if isinstance(log_payload["inputs"][0][0]["content"], str) and len(log_payload["inputs"][0][0]["content"]) > 100:
-            log_payload["inputs"][0][0]["content"] = log_payload["inputs"][0][0]["content"][:100] + "... (texto truncado)"
+        if len(log_payload.get("text_inputs", "")) > 100:
+            log_payload["text_inputs"] = log_payload["text_inputs"][:100] + "... (texto truncado)"
         logger.debug(f"Payload a enviar (truncado): {json.dumps(log_payload, indent=2)}")
         
-        # Agregar model_name como CustomAttributes
         response = sagemaker_runtime.invoke_endpoint(
             EndpointName=endpoint_name,
             ContentType='application/json',
-            CustomAttributes=json.dumps({"model_name": model_name}),
             Body=json.dumps(payload)
         )
         
@@ -267,7 +262,6 @@ def invoke_llama_model(text: str, endpoint_name: str, model_name: str) -> Option
             
     except Exception as e:
         logger.error(f"Error invocando el modelo Llama: {str(e)}")
-        # Usar la versión truncada del payload para el log de error
         if 'log_payload' in locals():
             logger.error(f"Payload enviado (truncado): {json.dumps(log_payload, indent=2)}")
         logger.error(f"Endpoint: {endpoint_name}")
