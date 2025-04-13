@@ -234,7 +234,8 @@ def invoke_llama_model(text: str, endpoint_name: str, model_name: str) -> Option
                 "max_new_tokens": 2048,
                 "temperature": 0.7,
                 "top_p": 0.9,
-                "do_sample": True
+                "do_sample": True,
+                "model_name": model_name
             }
         }
         
@@ -250,6 +251,9 @@ def invoke_llama_model(text: str, endpoint_name: str, model_name: str) -> Option
         response = sagemaker_runtime.invoke_endpoint(
             EndpointName=endpoint_name,
             ContentType='application/json',
+            CustomAttributes=json.dumps({
+                "model_name": model_name
+            }),
             Body=json.dumps(payload)
         )
         
