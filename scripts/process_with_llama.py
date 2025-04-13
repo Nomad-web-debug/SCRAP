@@ -207,20 +207,26 @@ def invoke_model(text: str, endpoint_name: str, model_name: str) -> Dict:
     try:
         runtime = boto3.client('sagemaker-runtime')
         
+        # Generar el prompt
+        prompt = generate_prompt(text, "")
+        
         payload = {
-            "inputs": text,
+            "inputs": prompt,
             "parameters": {
                 "max_new_tokens": 2048,
                 "temperature": 0.1,
-                "top_p": 0.9
+                "top_p": 0.9,
+                "model_name": model_name
             }
         }
+        
+        logger.info(f"Invocando endpoint {endpoint_name} con modelo {model_name}")
+        logger.info(f"Configuración del payload: {json.dumps(payload['parameters'], indent=2)}")
         
         response = runtime.invoke_endpoint(
             EndpointName=endpoint_name,
             ContentType='application/json',
-            Body=json.dumps(payload),
-            CustomAttributes=json.dumps({"model_name": model_name})
+            Body=json.dumps(payload)
         )
         
         result = json.loads(response['Body'].read().decode())
