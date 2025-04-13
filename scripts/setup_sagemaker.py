@@ -6,7 +6,7 @@ import os
 from botocore.exceptions import ClientError
 import argparse
 from datetime import datetime
-from typing import Dict, Tuple
+from typing import Dict, Tuple, Any
 
 # Configurar logging
 logging.basicConfig(
