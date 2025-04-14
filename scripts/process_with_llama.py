@@ -3,7 +3,7 @@ import os
 import argparse
 import logging
 from datetime import datetime
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 import boto3
 import fitz  # PyMuPDF
 import pandas as pd
@@ -200,6 +200,21 @@ Texto a analizar:
 Genera una respuesta JSON válida que siga exactamente el formato especificado, manteniendo la precisión donde se requiere.
 </response>"""
 
+def get_active_endpoint() -> Tuple[str, str]:
+    """
+    Obtiene el endpoint activo y el modelo desde el archivo de estado
+    
+    Returns:
+        Tuple[str, str]: (nombre del endpoint, versión del modelo)
+    """
+    try:
+        with open('data/endpoint_state.json', 'r') as f:
+            estado = json.load(f)
+            return estado['endpoint_name'], estado['modelo']
+    except Exception as e:
+        logger.error(f"Error leyendo estado del endpoint: {str(e)}")
+        return None, None
+
 def invoke_llama_model(text: str, endpoint_name: str, model_name: str, pdf_count: int) -> Optional[str]:
     """
     Invoca el modelo Llama 2 en SageMaker para procesar el texto
@@ -214,10 +229,16 @@ def invoke_llama_model(text: str, endpoint_name: str, model_name: str, pdf_count
         Optional[str]: Texto generado por el modelo o None si hay error
     """
     try:
+        # Obtener el endpoint activo actual
+        active_endpoint, active_model = get_active_endpoint()
+        if not active_endpoint:
+            logger.error("No se encontró un endpoint activo en el archivo de estado")
+            return None
+            
         region = os.environ.get('AWS_REGION', 'us-east-1')
         if pdf_count <= 15:
             logger.info(f"Iniciando invocación del modelo en región {region}")
-            logger.info(f"Endpoint: {endpoint_name}")
+            logger.info(f"Endpoint: {active_endpoint}")  # Usar el endpoint activo
             logger.info(f"Modelo: {model_name}")
         
         sagemaker_runtime = boto3.client('sagemaker-runtime', region_name=region)
@@ -256,7 +277,7 @@ def invoke_llama_model(text: str, endpoint_name: str, model_name: str, pdf_count
             logger.info(f"Invocando endpoint con payload de {len(json.dumps(payload))} bytes")
         
         response = sagemaker_runtime.invoke_endpoint(
-            EndpointName=endpoint_name,
+            EndpointName=active_endpoint,  # Usar el endpoint activo
             ContentType='application/json',
             Body=json.dumps(payload),
             CustomAttributes=f"model_name={model_name}"  # Metadata HTTP para SageMaker JumpStart
@@ -294,7 +315,7 @@ def invoke_llama_model(text: str, endpoint_name: str, model_name: str, pdf_count
             logger.error("=== Error Detallado ===")
             logger.error(f"Tipo de error: {type(e).__name__}")
             logger.error(f"Mensaje de error: {str(e)}")
-            logger.error(f"Endpoint: {endpoint_name}")
+            logger.error(f"Endpoint: {active_endpoint}")  # Usar el endpoint activo
             logger.error(f"Modelo: {model_name}")
             logger.error(f"Región: {region}")
             logger.error("=== Fin Error Detallado ===")
@@ -540,6 +561,12 @@ def procesar_texto_largo(text: str, endpoint_name: str, model_name: str, pdf_cou
     Procesa un texto largo dividiéndolo en secciones y combinando los resultados.
     """
     try:
+        # Obtener el endpoint activo actual
+        active_endpoint, active_model = get_active_endpoint()
+        if not active_endpoint:
+            logger.error("No se encontró un endpoint activo en el archivo de estado")
+            return None
+            
         # Dividir el texto en secciones
         secciones = dividir_texto_por_secciones(text)
         if pdf_count <= 15:
@@ -552,8 +579,8 @@ def procesar_texto_largo(text: str, endpoint_name: str, model_name: str, pdf_cou
             if pdf_count <= 15:
                 logger.info(f"Procesando sección {i}/{len(secciones)}")
             
-            # Invocar modelo para la sección
-            resultado = invoke_llama_model(seccion, endpoint_name, model_name, pdf_count)
+            # Invocar modelo para la sección usando el endpoint activo
+            resultado = invoke_llama_model(seccion, active_endpoint, model_name, pdf_count)
             
             if resultado is None:
                 if pdf_count <= 15:
