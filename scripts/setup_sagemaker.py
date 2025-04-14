@@ -236,26 +236,38 @@ def eliminar_recursos_asociados(sagemaker, model_name: str):
 
 def save_endpoint_state(endpoint_name: str, modelo: str):
     """
-    Guarda el estado del endpoint activo
+    Guarda el estado actual del endpoint en un archivo JSON
+    
+    Args:
+        endpoint_name (str): Nombre del endpoint actual
+        modelo (str): Versión del modelo ('7b', '13b' o '70b')
     """
-    state = {
-        'endpoint_name': endpoint_name,
-        'modelo': modelo,
-        'ultima_actualizacion': datetime.now().isoformat()
-    }
-    
-    # Asegurar que el directorio existe
-    os.makedirs('data', exist_ok=True)
-    
-    # Guardar en el directorio data
-    file_path = os.path.join('data', 'endpoint_state.json')
-    with open(file_path, 'w', encoding='utf-8') as f:
-        json.dump(state, f, ensure_ascii=False, indent=2)
-    logger.info(f"Estado del endpoint guardado en {file_path}")
-    
-    # Asegurar que el archivo se suba al repositorio
-    if os.environ.get('GITHUB_ACTIONS') == 'true':
-        print(f"::set-output name=endpoint_state_file::{file_path}")
+    try:
+        # Verificar que el modelo es válido
+        if modelo not in ['7b', '13b', '70b']:
+            raise ValueError(f"Modelo no válido: {modelo}. Debe ser '7b', '13b' o '70b'")
+        
+        # Crear directorio data si no existe
+        os.makedirs('data', exist_ok=True)
+        
+        # Crear o actualizar el estado
+        estado = {
+            'endpoint_name': endpoint_name,
+            'modelo': modelo,
+            'ultima_actualizacion': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            'timestamp': int(time.time())  # Añadir timestamp para forzar cambios
+        }
+        
+        # Guardar en archivo JSON
+        with open('data/endpoint_state.json', 'w') as f:
+            json.dump(estado, f, indent=2)
+            
+        logger.info(f"Estado del endpoint guardado en data/endpoint_state.json")
+        logger.info(f"Modelo actual: {modelo}")
+        
+    except Exception as e:
+        logger.error(f"Error guardando estado del endpoint: {str(e)}")
+        raise
 
 def get_active_endpoint():
     """
@@ -457,6 +469,9 @@ def create_sagemaker_endpoint(config: Dict[str, Any], region: str) -> Tuple[str,
         )
         
         logger.info("¡Endpoint listo para usar!")
+        
+        # Guardar el estado del endpoint
+        save_endpoint_state(endpoint_name, config['nombre'].split('-')[-1])  # Extraer '7b' o '13b' del nombre
         
         return endpoint_name, role_arn
         
