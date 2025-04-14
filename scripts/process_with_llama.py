@@ -231,8 +231,8 @@ def invoke_llama_model(text: str, endpoint_name: str, model_name: str, pdf_count
     try:
         # Obtener el endpoint activo actual
         active_endpoint, active_model = get_active_endpoint()
-        if not active_endpoint:
-            logger.error("No se encontró un endpoint activo en el archivo de estado")
+        if not active_endpoint or not active_model:
+            logger.error("No se encontró un endpoint activo o modelo en el archivo de estado")
             return None
             
         region = os.environ.get('AWS_REGION', 'us-east-1')
@@ -276,7 +276,7 @@ def invoke_llama_model(text: str, endpoint_name: str, model_name: str, pdf_count
             EndpointName=active_endpoint,
             ContentType='application/json',
             Body=json.dumps(payload),
-            CustomAttributes=f"model_name=llama-2-{active_model}-chat"  # Formato correcto para SageMaker JumpStart
+            CustomAttributes=f"model_name=llama-2-{active_model}-chat"  # Usar active_model del archivo de estado
         )
         
         if pdf_count <= 15:
