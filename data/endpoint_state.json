@@ -1,5 +1,6 @@
 {
-  "endpoint_name": "llama-2-13b-endpoint",
+  "endpoint_name": "llama-2-13b-2025-04-14-00-06-38-endpoint",
   "modelo": "13b",
-  "ultima_actualizacion": "2025-04-11T02:13:34.055312"
+  "ultima_actualizacion": "2025-04-14 00:12:41",
+  "timestamp": 1744589561
 }
