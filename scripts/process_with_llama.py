@@ -222,7 +222,7 @@ def invoke_llama_model(text: str, endpoint_name: str, model_name: str, pdf_count
     Args:
         text (str): Texto a procesar
         endpoint_name (str): Nombre del endpoint de SageMaker
-        model_name (str): Nombre del modelo a usar (ej: 'llama-2-7b-chat')
+        model_name (str): Nombre del modelo a usar (ej: '7b', '13b', '70b')
         pdf_count (int): Número del PDF actual para control de logs
         
     Returns:
@@ -238,8 +238,8 @@ def invoke_llama_model(text: str, endpoint_name: str, model_name: str, pdf_count
         region = os.environ.get('AWS_REGION', 'us-east-1')
         if pdf_count <= 15:
             logger.info(f"Iniciando invocación del modelo en región {region}")
-            logger.info(f"Endpoint: {active_endpoint}")  # Usar el endpoint activo
-            logger.info(f"Modelo: {model_name}")
+            logger.info(f"Endpoint: {active_endpoint}")
+            logger.info(f"Modelo: llama-2-{active_model}-chat")
         
         sagemaker_runtime = boto3.client('sagemaker-runtime', region_name=region)
         
@@ -247,16 +247,14 @@ def invoke_llama_model(text: str, endpoint_name: str, model_name: str, pdf_count
         prompt = generate_prompt(text, "")
         
         # Formato del payload para containers oficiales de SageMaker JumpStart
-        # IMPORTANTE: El model_name NO debe ir en parameters, solo en CustomAttributes
-        # parameters solo debe contener parámetros de generación que entiende el modelo
         payload = {
             "inputs": [[
                 {"role": "system", "content": "Eres un asistente legal que analiza documentos legales."},
                 {"role": "user", "content": prompt}
             ]],
             "parameters": {
-                "max_new_tokens": 2048,  # Parámetros de generación
-                "temperature": 0.3,      # que entiende el modelo
+                "max_new_tokens": 2048,
+                "temperature": 0.3,
                 "top_p": 0.9,
                 "do_sample": True,
                 "repetition_penalty": 1.2
@@ -267,20 +265,18 @@ def invoke_llama_model(text: str, endpoint_name: str, model_name: str, pdf_count
             logger.info("=== Detalles del Payload ===")
             logger.info(f"Payload completo: {json.dumps(payload, indent=2)}")
             logger.info(f"Configuración de parámetros: {json.dumps(payload['parameters'], indent=2)}")
-            logger.info(f"Model name en CustomAttributes: {model_name}")
+            logger.info(f"Model name en CustomAttributes: llama-2-{active_model}-chat")
             logger.info("=== Fin Detalles del Payload ===")
         
         # Invocar endpoint con CustomAttributes para el model_name
-        # IMPORTANTE: Para containers oficiales de SageMaker JumpStart,
-        # el model_name debe ir exclusivamente en CustomAttributes
         if pdf_count <= 15:
             logger.info(f"Invocando endpoint con payload de {len(json.dumps(payload))} bytes")
         
         response = sagemaker_runtime.invoke_endpoint(
-            EndpointName=active_endpoint,  # Usar el endpoint activo
+            EndpointName=active_endpoint,
             ContentType='application/json',
             Body=json.dumps(payload),
-            CustomAttributes=f"model_name={model_name}"  # Metadata HTTP para SageMaker JumpStart
+            CustomAttributes=f"model_name=llama-2-{active_model}-chat"  # Formato correcto para SageMaker JumpStart
         )
         
         if pdf_count <= 15:
@@ -315,8 +311,8 @@ def invoke_llama_model(text: str, endpoint_name: str, model_name: str, pdf_count
             logger.error("=== Error Detallado ===")
             logger.error(f"Tipo de error: {type(e).__name__}")
             logger.error(f"Mensaje de error: {str(e)}")
-            logger.error(f"Endpoint: {active_endpoint}")  # Usar el endpoint activo
-            logger.error(f"Modelo: {model_name}")
+            logger.error(f"Endpoint: {active_endpoint}")
+            logger.error(f"Modelo: llama-2-{active_model}-chat")
             logger.error(f"Región: {region}")
             logger.error("=== Fin Error Detallado ===")
         return None
