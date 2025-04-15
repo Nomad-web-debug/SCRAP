@@ -633,93 +633,67 @@ def combinar_resultados(resultados: List[Dict]) -> Dict:
         return resultados[0]  # Retornar el primer resultado si hay error
 
 def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--input-dir', required=True, help='Directorio con PDFs a procesar')
-    parser.add_argument('--output-dir', required=True, help='Directorio para guardar resultados')
-    parser.add_argument('--endpoint', required=True, help='Nombre del endpoint de SageMaker')
-    parser.add_argument('--model', required=True, help='Nombre del modelo a usar (ej: llama-2-13b-chat)')
+    """
+    Función principal que procesa los PDFs usando el modelo Llama 2
+    """
+    parser = argparse.ArgumentParser(description='Procesa PDFs usando Llama 2 en SageMaker')
+    parser.add_argument('--input-dir', required=True, help='Directorio con los PDFs a procesar')
+    parser.add_argument('--output-dir', required=True, help='Directorio para guardar los resultados')
     args = parser.parse_args()
     
-    # Crear directorio de salida si no existe
-    os.makedirs(args.output_dir, exist_ok=True)
-    
-    # Lista de resultados para el CSV
-    results = []
-    pdf_count = 0
-    success_count = 0
-    error_count = 0
-    
-    # Procesar cada PDF
-    for pdf_file in glob.glob(os.path.join(args.input_dir, '*.pdf')):
-        pdf_count += 1
-        filename = os.path.basename(pdf_file)
+    try:
+        # Leer el endpoint y modelo del archivo de estado
+        with open('data/endpoint_state.json', 'r') as f:
+            estado = json.load(f)
+            endpoint_name = estado['endpoint_name']
+            modelo = estado['modelo']
+            model_name = f"llama-2-{modelo}-chat"
+            
+        logger.info(f"Usando endpoint: {endpoint_name}")
+        logger.info(f"Usando modelo: {model_name}")
         
-        if pdf_count <= 15:
-            logging.info(f'Procesando {filename}...')
-        else:
-            if pdf_count % 10 == 0:  # Mostrar resumen cada 10 PDFs
-                logging.info(f'Procesados {pdf_count} PDFs: {success_count} exitosos, {error_count} errores')
+        # Crear directorio de salida si no existe
+        os.makedirs(args.output_dir, exist_ok=True)
         
-        try:
-            # Extraer texto del PDF
-            text = extract_text_from_pdf(pdf_file)
+        # Procesar cada PDF
+        pdf_files = [f for f in os.listdir(args.input_dir) if f.endswith('.pdf')]
+        total_pdfs = len(pdf_files)
+        
+        for i, pdf_file in enumerate(pdf_files, 1):
+            pdf_path = os.path.join(args.input_dir, pdf_file)
+            logger.info(f"Procesando PDF {i}/{total_pdfs}: {pdf_file}")
             
-            # Limpiar texto
-            text = clean_text(text)
-            
-            # Verificar longitud del texto
-            if len(text) > 3000:  # Si el texto es muy largo
-                if pdf_count <= 15:
-                    logger.info(f"Texto demasiado largo ({len(text)} caracteres). Procesando por secciones...")
-                result = procesar_texto_largo(text, args.endpoint, args.model, pdf_count)
-            else:
-                result = invoke_llama_model(text, args.endpoint, args.model, pdf_count)
-            
-            # Verificar si hubo error en la invocación
-            if result is None:
-                error_count += 1
-                if pdf_count <= 15:
-                    logging.error(f'Error en la respuesta del modelo para {filename}')
+            try:
+                # Extraer texto del PDF
+                text = extract_text_from_pdf(pdf_path)
+                if not text:
+                    logger.error(f"No se pudo extraer texto de {pdf_file}")
+                    continue
+                
+                # Procesar el texto
+                if len(text) > 3000:  # Si el texto es muy largo, procesar por secciones
+                    resultado = procesar_texto_largo(text, endpoint_name, model_name, i)
+                else:
+                    resultado = invoke_llama_model(text, endpoint_name, model_name, i)
+                
+                if resultado:
+                    # Guardar resultado
+                    output_file = os.path.join(args.output_dir, f"{os.path.splitext(pdf_file)[0]}.json")
+                    with open(output_file, 'w', encoding='utf-8') as f:
+                        json.dump(resultado, f, ensure_ascii=False, indent=2)
+                    logger.info(f"Resultado guardado en {output_file}")
+                else:
+                    logger.error(f"No se pudo procesar {pdf_file}")
+                    
+            except Exception as e:
+                logger.error(f"Error procesando {pdf_file}: {str(e)}")
                 continue
                 
-            # Validar estructura
-            if not validate_structure(result):
-                error_count += 1
-                if pdf_count <= 15:
-                    logging.error(f'Estructura inválida en respuesta para {filename}')
-                continue
-                
-            success_count += 1
-            
-            # Guardar JSON individual
-            output_json = os.path.join(args.output_dir, f'{os.path.splitext(filename)[0]}.json')
-            with open(output_json, 'w', encoding='utf-8') as f:
-                json.dump(result, f, ensure_ascii=False, indent=2)
-            
-            # Agregar a resultados para CSV
-            results.append({
-                'archivo': filename,
-                'titulo': result['titulo'],
-                'fecha': result['fecha'],
-                'resumen': result['resumen']
-            })
-            
-        except Exception as e:
-            error_count += 1
-            if pdf_count <= 15:
-                logging.error(f'Error procesando {filename}: {str(e)}')
-            continue
-    
-    # Mostrar resumen final
-    logging.info(f'Procesamiento completado: {pdf_count} PDFs totales, {success_count} exitosos, {error_count} errores')
-    
-    # Guardar CSV con todos los resultados
-    if results:
-        df = pd.DataFrame(results)
-        csv_path = os.path.join(args.output_dir, 'resultados.csv')
-        df.to_csv(csv_path, index=False, encoding='utf-8')
-    else:
-        logging.warning('No se procesó ningún documento correctamente')
+    except Exception as e:
+        logger.error(f"Error en la ejecución principal: {str(e)}")
+        return 1
+        
+    return 0
 
 if __name__ == '__main__':
     main() 
