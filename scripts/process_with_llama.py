@@ -222,29 +222,18 @@ def invoke_llama_model(text: str, endpoint_name: str, model_name: str, pdf_count
     Args:
         text (str): Texto a procesar
         endpoint_name (str): Nombre del endpoint de SageMaker
-        model_name (str): Nombre del modelo a usar (ej: '7b', '13b', '70b')
+        model_name (str): Nombre completo del modelo (ej: 'llama-2-13b-chat')
         pdf_count (int): Número del PDF actual para control de logs
         
     Returns:
         Optional[str]: Texto generado por el modelo o None si hay error
     """
     try:
-        # Obtener el endpoint activo actual
-        active_endpoint, active_model = get_active_endpoint()
-        if not active_endpoint or not active_model:
-            logger.error("No se encontró un endpoint activo o modelo en el archivo de estado")
-            return None
-            
-        # Verificar que el modelo es válido
-        if active_model not in ['7b', '13b', '70b']:
-            logger.error(f"Modelo no válido en archivo de estado: {active_model}")
-            return None
-            
         region = os.environ.get('AWS_REGION', 'us-east-1')
         if pdf_count <= 15:
             logger.info(f"Iniciando invocación del modelo en región {region}")
-            logger.info(f"Endpoint: {active_endpoint}")
-            logger.info(f"Modelo: llama-2-{active_model}-chat")
+            logger.info(f"Endpoint: {endpoint_name}")
+            logger.info(f"Modelo: {model_name}")
         
         sagemaker_runtime = boto3.client('sagemaker-runtime', region_name=region)
         
@@ -270,7 +259,7 @@ def invoke_llama_model(text: str, endpoint_name: str, model_name: str, pdf_count
             logger.info("=== Detalles del Payload ===")
             logger.info(f"Payload completo: {json.dumps(payload, indent=2)}")
             logger.info(f"Configuración de parámetros: {json.dumps(payload['parameters'], indent=2)}")
-            logger.info(f"Model name en CustomAttributes: llama-2-{active_model}-chat")
+            logger.info(f"Model name en CustomAttributes: {model_name}")
             logger.info("=== Fin Detalles del Payload ===")
         
         # Invocar endpoint con CustomAttributes para el model_name
@@ -278,10 +267,10 @@ def invoke_llama_model(text: str, endpoint_name: str, model_name: str, pdf_count
             logger.info(f"Invocando endpoint con payload de {len(json.dumps(payload))} bytes")
         
         response = sagemaker_runtime.invoke_endpoint(
-            EndpointName=active_endpoint,
+            EndpointName=endpoint_name,
             ContentType='application/json',
             Body=json.dumps(payload),
-            CustomAttributes=f"model_name=llama-2-{active_model}-chat"  # Usar active_model del archivo de estado
+            CustomAttributes=f"model_name={model_name}"  # Usar el model_name que se recibe como parámetro
         )
         
         if pdf_count <= 15:
@@ -316,8 +305,8 @@ def invoke_llama_model(text: str, endpoint_name: str, model_name: str, pdf_count
             logger.error("=== Error Detallado ===")
             logger.error(f"Tipo de error: {type(e).__name__}")
             logger.error(f"Mensaje de error: {str(e)}")
-            logger.error(f"Endpoint: {active_endpoint}")
-            logger.error(f"Modelo: llama-2-{active_model}-chat")
+            logger.error(f"Endpoint: {endpoint_name}")
+            logger.error(f"Modelo: {model_name}")
             logger.error(f"Región: {region}")
             logger.error("=== Fin Error Detallado ===")
         return None
