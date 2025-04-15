@@ -235,6 +235,11 @@ def invoke_llama_model(text: str, endpoint_name: str, model_name: str, pdf_count
             logger.error("No se encontró un endpoint activo o modelo en el archivo de estado")
             return None
             
+        # Verificar que el modelo es válido
+        if active_model not in ['7b', '13b', '70b']:
+            logger.error(f"Modelo no válido en archivo de estado: {active_model}")
+            return None
+            
         region = os.environ.get('AWS_REGION', 'us-east-1')
         if pdf_count <= 15:
             logger.info(f"Iniciando invocación del modelo en región {region}")

@@ -253,7 +253,7 @@ def save_endpoint_state(endpoint_name: str, modelo: str):
         # Crear o actualizar el estado
         estado = {
             'endpoint_name': endpoint_name,
-            'modelo': modelo,
+            'modelo': modelo,  # Guardar solo la versión (7b, 13b, 70b)
             'ultima_actualizacion': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
             'timestamp': int(time.time())  # Añadir timestamp para forzar cambios
         }
