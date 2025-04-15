@@ -549,14 +549,17 @@ def dividir_texto_por_secciones(text: str) -> List[str]:
 def procesar_texto_largo(text: str, endpoint_name: str, model_name: str, pdf_count: int) -> Optional[Dict]:
     """
     Procesa un texto largo dividiéndolo en secciones y combinando los resultados.
+    
+    Args:
+        text (str): Texto a procesar
+        endpoint_name (str): Nombre del endpoint de SageMaker
+        model_name (str): Nombre completo del modelo (ej: 'llama-2-13b-chat')
+        pdf_count (int): Número del PDF actual para control de logs
+        
+    Returns:
+        Optional[Dict]: Resultado del procesamiento o None si hay error
     """
     try:
-        # Obtener el endpoint activo actual
-        active_endpoint, active_model = get_active_endpoint()
-        if not active_endpoint:
-            logger.error("No se encontró un endpoint activo en el archivo de estado")
-            return None
-            
         # Dividir el texto en secciones
         secciones = dividir_texto_por_secciones(text)
         if pdf_count <= 15:
@@ -569,8 +572,8 @@ def procesar_texto_largo(text: str, endpoint_name: str, model_name: str, pdf_cou
             if pdf_count <= 15:
                 logger.info(f"Procesando sección {i}/{len(secciones)}")
             
-            # Invocar modelo para la sección usando el endpoint activo
-            resultado = invoke_llama_model(seccion, active_endpoint, model_name, pdf_count)
+            # Invocar modelo para la sección usando los parámetros recibidos
+            resultado = invoke_llama_model(seccion, endpoint_name, model_name, pdf_count)
             
             if resultado is None:
                 if pdf_count <= 15:
